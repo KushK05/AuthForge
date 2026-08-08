@@ -12,6 +12,7 @@
     "dev:api": "tsx watch src/api/server.ts",
     "dev:worker": "tsx watch src/worker/main.ts",
     "lint": "eslint .",
+    "migrate": "tsx src/platform/database/migrate.ts",
     "start:api": "tsx src/api/server.ts",
     "start:worker": "tsx src/worker/main.ts",
     "test": "vitest run",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "fastify": "^5.2.1",
+    "postgres": "^3.4.5",
     "zod": "^3.24.2"
   },
   "devDependencies": {
