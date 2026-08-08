@@ -1,6 +1,7 @@
-import { loadConfig } from "../platform/config.js";
+import { loadConfig, loadLocalEnvironmentFile } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
 
+loadLocalEnvironmentFile();
 const config = loadConfig();
 const logger = new Logger(config.logLevel, config.environment);
 

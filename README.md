@@ -43,4 +43,6 @@ The initial production architecture is a modular monolith API plus event-driven 
 3. Use a fixed local issuer, for example `http://localhost:8080`, and a local email sink. Never send email to real addresses from local development.
 4. Keep `.env.example` complete but secret-free. Load actual development secrets from an untracked `.env` file or the approved secret manager integration.
 
+After copying `.env.example` to `.env`, set a unique `API_KEY_HASH_KEY` with at least 32 characters. Once the dependencies have started and migrations have run, execute `npm run seed:development` exactly once to create the local bootstrap project and reveal its initial secret key. This command refuses non-development environments and never re-reveals a prior bootstrap key.
+
 Implementation order, environment variables, and verification gates are specified in [ROADMAP.md](ROADMAP.md), [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md), and [TESTING.md](TESTING.md).

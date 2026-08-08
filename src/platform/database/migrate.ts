@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 
 import postgres from "postgres";
 
-import { loadConfig } from "../config.js";
+import { loadConfig, loadLocalEnvironmentFile } from "../config.js";
 import { Logger } from "../logger.js";
 
 export type Migration = Readonly<{
@@ -57,6 +57,7 @@ const applyMigration = async (sql: postgres.Sql, migration: Migration): Promise<
 };
 
 export const migrate = async (): Promise<void> => {
+  loadLocalEnvironmentFile();
   const config = loadConfig();
   const logger = new Logger(config.logLevel, config.environment);
   const sql = postgres(config.databaseUrl, { max: 1 });

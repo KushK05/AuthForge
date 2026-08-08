@@ -2,9 +2,10 @@ import postgres from "postgres";
 
 import { buildApi } from "./app.js";
 import { PostgresDeveloperPlatformRepository } from "../modules/developer-platform/infrastructure/postgres-developer-platform-repository.js";
-import { loadConfig } from "../platform/config.js";
+import { loadConfig, loadLocalEnvironmentFile } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
 
+loadLocalEnvironmentFile();
 const config = loadConfig();
 const logger = new Logger(config.logLevel, config.environment);
 const database = postgres(config.databaseUrl, { max: 10 });

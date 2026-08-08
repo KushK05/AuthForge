@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 import { z } from "zod";
 
 const environmentSchema = z.enum(["development", "test", "staging", "production"]);
@@ -25,6 +27,10 @@ export type AppConfig = Readonly<{
   apiKeyHashKey: string;
   publicIssuerBaseUrl: string;
 }>;
+
+export const loadLocalEnvironmentFile = (path = ".env"): void => {
+  if (existsSync(path)) process.loadEnvFile(path);
+};
 
 export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppConfig => {
   const parsed = configurationSchema.safeParse(environment);
