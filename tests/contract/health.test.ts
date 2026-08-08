@@ -10,7 +10,9 @@ const config: AppConfig = {
   logLevel: "error",
   databaseUrl: "postgres://authforge:authforge@localhost:5432/authforge",
   redisUrl: "redis://localhost:6379",
-  awsRegion: "us-east-1"
+  awsRegion: "us-east-1",
+  apiKeyHashKey: "test-api-key-hashing-secret-value",
+  publicIssuerBaseUrl: "http://localhost:8080"
 };
 const api = buildApi(config);
 

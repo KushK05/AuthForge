@@ -24,7 +24,10 @@ const command = {
   actorKeyId: "key-1",
   name: "  New Project  ",
   correlationId: "request_12345678",
-  issuer: "https://authforge.test/projects/new-project"
+  issuerBaseUrl: "https://authforge.test",
+  idempotencyKey: "key_12345678",
+  requestHash: Buffer.from("request-hash"),
+  now: new Date("2026-08-08T00:00:00.000Z")
 };
 
 const createRepository = (organizationId: string | undefined): {
@@ -33,7 +36,10 @@ const createRepository = (organizationId: string | undefined): {
 } => {
   const transaction: DeveloperPlatformTransaction = {
     findOrganizationIdForProject: async () => organizationId,
+    lockIdempotencyScope: async () => undefined,
+    findIdempotencyRecord: async () => undefined,
     createProject: async () => createdProject,
+    saveIdempotencyRecord: async () => undefined,
     appendAuditEvent: async () => undefined
   };
 
@@ -46,11 +52,16 @@ describe("createProject", () => {
     const create = vi.spyOn(transaction, "createProject");
     const audit = vi.spyOn(transaction, "appendAuditEvent");
 
-    await expect(createProject(repository, command)).resolves.toEqual(createdProject);
+    await expect(createProject(repository, command)).resolves.toEqual({
+      project: createdProject,
+      replayed: false
+    });
     expect(create).toHaveBeenCalledWith({
       organizationId: "organization-1",
       name: "New Project",
-      issuer: command.issuer
+      id: expect.any(String),
+      environmentId: expect.any(String),
+      issuer: command.issuerBaseUrl
     });
     expect(audit).toHaveBeenCalledWith({
       projectId: command.authenticatedProjectId,
@@ -76,6 +87,34 @@ describe("createProject", () => {
     await expect(createProject(repository, { ...command, name: " " })).rejects.toMatchObject({
       status: 400,
       code: "invalid_request"
+    });
+  });
+
+  it("replays the prior result without repeating a mutation", async () => {
+    const { repository, transaction } = createRepository("organization-1");
+    transaction.findIdempotencyRecord = async () => ({
+      requestHash: command.requestHash,
+      project: createdProject
+    });
+    const create = vi.spyOn(transaction, "createProject");
+
+    await expect(createProject(repository, command)).resolves.toEqual({
+      project: createdProject,
+      replayed: true
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a reused idempotency key with a different request", async () => {
+    const { repository, transaction } = createRepository("organization-1");
+    transaction.findIdempotencyRecord = async () => ({
+      requestHash: Buffer.from("prior-request-hash"),
+      project: createdProject
+    });
+
+    await expect(createProject(repository, command)).rejects.toMatchObject({
+      status: 409,
+      code: "idempotency_key_reused"
     });
   });
 });

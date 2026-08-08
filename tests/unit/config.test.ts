@@ -5,7 +5,9 @@ import { loadConfig } from "../../src/platform/config.js";
 const validEnvironment = {
   DATABASE_URL: "postgres://authforge:authforge@localhost:5432/authforge",
   REDIS_URL: "redis://localhost:6379",
-  AWS_REGION: "us-east-1"
+  AWS_REGION: "us-east-1",
+  API_KEY_HASH_KEY: "test-api-key-hashing-secret-value",
+  PUBLIC_ISSUER_BASE_URL: "http://localhost:8080"
 };
 
 describe("loadConfig", () => {

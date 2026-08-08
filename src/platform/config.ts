@@ -9,7 +9,9 @@ const configurationSchema = z.object({
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
-  AWS_REGION: z.string().min(1)
+  AWS_REGION: z.string().min(1),
+  API_KEY_HASH_KEY: z.string().min(32),
+  PUBLIC_ISSUER_BASE_URL: z.string().url().default("http://localhost:8080")
 });
 
 export type AppConfig = Readonly<{
@@ -20,6 +22,8 @@ export type AppConfig = Readonly<{
   databaseUrl: string;
   redisUrl: string;
   awsRegion: string;
+  apiKeyHashKey: string;
+  publicIssuerBaseUrl: string;
 }>;
 
 export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppConfig => {
@@ -37,6 +41,8 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     logLevel: parsed.data.LOG_LEVEL,
     databaseUrl: parsed.data.DATABASE_URL,
     redisUrl: parsed.data.REDIS_URL,
-    awsRegion: parsed.data.AWS_REGION
+    awsRegion: parsed.data.AWS_REGION,
+    apiKeyHashKey: parsed.data.API_KEY_HASH_KEY,
+    publicIssuerBaseUrl: parsed.data.PUBLIC_ISSUER_BASE_URL
   };
 };

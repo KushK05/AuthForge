@@ -1,10 +1,23 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import Fastify, { type FastifyInstance } from "fastify";
+import { z } from "zod";
 
-import { ApplicationError } from "../shared/application/errors.js";
+import {
+  ApplicationError,
+  invalidCredentials,
+  invalidRequest,
+  unavailableDependency
+} from "../shared/application/errors.js";
+import { authenticateSecretApiKey } from "../modules/developer-platform/application/authenticate-secret-key.js";
+import {
+  createProject,
+  type DeveloperPlatformRepository
+} from "../modules/developer-platform/application/create-project.js";
+import type { SecretApiKeyReader } from "../modules/developer-platform/application/authenticate-secret-key.js";
 import type { AppConfig } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
+import { hashOpaqueSecret } from "../shared/crypto/opaque-secret.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -12,7 +25,18 @@ declare module "fastify" {
   }
 }
 
-export const buildApi = (config: AppConfig, logger = new Logger(config.logLevel, config.environment)): FastifyInstance => {
+export type DeveloperPlatformDependencies = Readonly<{
+  repository: DeveloperPlatformRepository & SecretApiKeyReader;
+}>;
+
+const createProjectBodySchema = z.object({ name: z.string() }).strict();
+const idempotencyKeyPattern = /^[A-Za-z0-9._:-]{1,255}$/;
+
+export const buildApi = (
+  config: AppConfig,
+  logger = new Logger(config.logLevel, config.environment),
+  developerPlatform?: DeveloperPlatformDependencies
+): FastifyInstance => {
   const api = Fastify({ logger: false });
 
   api.addHook("onRequest", async (request, reply) => {
@@ -58,6 +82,41 @@ export const buildApi = (config: AppConfig, logger = new Logger(config.logLevel,
 
   api.get("/healthz", async () => ({ status: "ok" }));
   api.get("/readyz", async () => ({ status: "ok" }));
+
+  api.post("/v1/developer/projects", async (request, reply) => {
+    const authorization = request.headers.authorization;
+    const match = typeof authorization === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorization) : null;
+    const secretApiKey = match?.[1];
+    if (!secretApiKey) throw invalidCredentials();
+    if (!developerPlatform) throw unavailableDependency();
+
+    const idempotencyKey = request.headers["idempotency-key"];
+    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
+      throw invalidRequest("A valid Idempotency-Key header is required");
+    }
+
+    const body = createProjectBodySchema.safeParse(request.body);
+    if (!body.success) throw invalidRequest("Request body must contain only a project name");
+
+    const actor = await authenticateSecretApiKey(
+      developerPlatform.repository,
+      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
+      "projects:write",
+      new Date()
+    );
+    const result = await createProject(developerPlatform.repository, {
+      authenticatedProjectId: actor.projectId,
+      actorKeyId: actor.id,
+      name: body.data.name,
+      correlationId: request.requestId,
+      issuerBaseUrl: config.publicIssuerBaseUrl,
+      idempotencyKey,
+      requestHash: createHash("sha256").update(JSON.stringify(body.data)).digest(),
+      now: new Date()
+    });
+
+    return reply.status(result.replayed ? 200 : 201).send(result.project);
+  });
 
   return api;
 };

@@ -48,7 +48,7 @@ Refresh tokens are sent only in an HTTP-only Secure SameSite cookie for browser 
 
 | Method and path | Required scope | Contract |
 | --- | --- | --- |
-| `POST /v1/developer/projects` | `projects:write` | Creates a project and its default environment. |
+| `POST /v1/developer/projects` | `projects:write` | `{name}`. Creates a project and its default development environment. Returns `201` with the project and environment summary; an idempotent replay returns the same summary with `200`. |
 | `GET /v1/developer/projects` | `projects:read` | Lists only projects within the developer organization. |
 | `POST /v1/developer/projects/{project_id}/keys` | `keys:write` | Creates a scoped secret key. Raw secret returned once. |
 | `DELETE /v1/developer/projects/{project_id}/keys/{key_id}` | `keys:write` | Revokes a key immediately. |

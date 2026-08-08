@@ -1,4 +1,10 @@
-import { invalidRequest, notFound } from "../../../shared/application/errors.js";
+import { randomUUID, timingSafeEqual } from "node:crypto";
+
+import {
+  idempotencyKeyReused,
+  invalidRequest,
+  notFound
+} from "../../../shared/application/errors.js";
 
 export type ProjectSummary = Readonly<{
   id: string;
@@ -17,12 +23,48 @@ export type CreateProjectCommand = Readonly<{
   actorKeyId: string;
   name: string;
   correlationId: string;
-  issuer: string;
+  issuerBaseUrl: string;
+  idempotencyKey: string;
+  requestHash: Buffer;
+  now: Date;
+}>;
+
+export type CreateProjectResult = Readonly<{
+  project: ProjectSummary;
+  replayed: boolean;
 }>;
 
 export interface DeveloperPlatformTransaction {
   findOrganizationIdForProject(projectId: string): Promise<string | undefined>;
-  createProject(input: Readonly<{ organizationId: string; name: string; issuer: string }>): Promise<ProjectSummary>;
+  lockIdempotencyScope(input: Readonly<{
+    principalId: string;
+    projectId: string;
+    route: string;
+    key: string;
+  }>): Promise<void>;
+  findIdempotencyRecord(input: Readonly<{
+    principalId: string;
+    projectId: string;
+    route: string;
+    key: string;
+    now: Date;
+  }>): Promise<Readonly<{ requestHash: Buffer; project: ProjectSummary }> | undefined>;
+  createProject(input: Readonly<{
+    id: string;
+    environmentId: string;
+    organizationId: string;
+    name: string;
+    issuer: string;
+  }>): Promise<ProjectSummary>;
+  saveIdempotencyRecord(input: Readonly<{
+    principalId: string;
+    projectId: string;
+    route: string;
+    key: string;
+    requestHash: Buffer;
+    project: ProjectSummary;
+    expiresAt: Date;
+  }>): Promise<void>;
   appendAuditEvent(input: Readonly<{
     projectId: string;
     actorId: string;
@@ -49,17 +91,40 @@ const validateProjectName = (name: string): string => {
 export const createProject = async (
   repository: DeveloperPlatformRepository,
   command: CreateProjectCommand
-): Promise<ProjectSummary> =>
+): Promise<CreateProjectResult> =>
   repository.transaction(async (transaction) => {
+    const idempotencyScope = {
+      principalId: command.actorKeyId,
+      projectId: command.authenticatedProjectId,
+      route: "/v1/developer/projects",
+      key: command.idempotencyKey
+    };
+    await transaction.lockIdempotencyScope(idempotencyScope);
+    const priorResult = await transaction.findIdempotencyRecord({
+      ...idempotencyScope,
+      now: command.now
+    });
+    if (priorResult) {
+      if (
+        priorResult.requestHash.byteLength !== command.requestHash.byteLength ||
+        !timingSafeEqual(priorResult.requestHash, command.requestHash)
+      ) {
+        throw idempotencyKeyReused();
+      }
+      return { project: priorResult.project, replayed: true };
+    }
+
     const organizationId = await transaction.findOrganizationIdForProject(command.authenticatedProjectId);
     if (!organizationId) {
       throw notFound("Authenticated project is unavailable");
     }
 
     const project = await transaction.createProject({
+      id: randomUUID(),
+      environmentId: randomUUID(),
       organizationId,
       name: validateProjectName(command.name),
-      issuer: command.issuer
+      issuer: command.issuerBaseUrl
     });
 
     await transaction.appendAuditEvent({
@@ -70,5 +135,12 @@ export const createProject = async (
       correlationId: command.correlationId
     });
 
-    return project;
+    await transaction.saveIdempotencyRecord({
+      ...idempotencyScope,
+      requestHash: command.requestHash,
+      project,
+      expiresAt: new Date(command.now.getTime() + 24 * 60 * 60 * 1_000)
+    });
+
+    return { project, replayed: false };
   });
