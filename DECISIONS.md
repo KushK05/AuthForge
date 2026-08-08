@@ -37,6 +37,17 @@ This is an append-only log. Status values: `accepted`, `superseded`, `proposed`,
 - Decision: Use ECS Fargate, RDS PostgreSQL, ElastiCache Redis, SQS, SES, S3, CloudWatch, WAF, KMS, Secrets Manager, ECR, and IaC.
 - Consequences: The team learns production cloud boundaries, IAM, networking, monitoring, and scale mechanics without managing control planes.
 
+## ADR-006: TypeScript and Fastify application platform
+
+- Status: accepted
+- Date: 2026-08-08
+- Context: The repository begins without an implementation language or runtime. The API and worker need shared type-safe contracts, PostgreSQL access, Argon2id support, OpenTelemetry compatibility, and a maintainable migration workflow.
+- Decision: Use TypeScript on the current supported Node.js LTS line. Implement the public API with Fastify, use the `postgres` driver with SQL migrations, and use Vitest for automated tests. The API and worker remain separate entry points in the same package and release artifact.
+- Alternatives: Python/FastAPI and Go were considered. Both are mature options, but TypeScript keeps request validation, application contracts, and infrastructure-adapter interfaces in one strongly typed ecosystem while Fastify provides a small explicit HTTP boundary.
+- Consequences: Runtime configuration and untrusted HTTP inputs can be validated with shared schemas. SQL remains visible and database ownership boundaries are easier to audit. Dependencies must be kept current and production images must use a supported Node.js LTS release.
+- Migration and rollback: There is no existing runtime or persisted data. Future schema changes remain forward-only SQL migrations and application releases remain independently rollbackable when migrations are compatible.
+- Verification: Type checking, linting, unit tests, integration tests against PostgreSQL, contract tests for public endpoints, and the journeys in `TESTING.md` gate future work.
+
 ## ADR template
 
 ## ADR-NNN: Title
