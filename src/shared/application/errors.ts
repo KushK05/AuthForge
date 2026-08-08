@@ -1,6 +1,7 @@
 export type ProblemCode =
   | "internal_error"
   | "invalid_request"
+  | "not_found"
   | "unavailable_dependency";
 
 export class ApplicationError extends Error {
@@ -32,5 +33,13 @@ export const invalidRequest = (message: string): ApplicationError =>
     status: 400,
     code: "invalid_request",
     title: "Invalid request",
+    message
+  });
+
+export const notFound = (message: string): ApplicationError =>
+  new ApplicationError({
+    status: 404,
+    code: "not_found",
+    title: "Resource not found",
     message
   });
