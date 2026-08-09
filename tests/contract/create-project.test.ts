@@ -18,7 +18,9 @@ const config: AppConfig = {
   redisUrl: "redis://localhost:6379",
   awsRegion: "us-east-1",
   apiKeyHashKey: "test-api-key-hashing-secret-value",
-  publicIssuerBaseUrl: "http://localhost:8080"
+  publicIssuerBaseUrl: "http://localhost:8080",
+  passwordMinLength: 12,
+  argon2: { memoryKiB: 19_456, iterations: 2, parallelism: 1 }
 };
 
 const project: ProjectSummary = {

@@ -13,7 +13,11 @@ const configurationSchema = z.object({
   REDIS_URL: z.string().url(),
   AWS_REGION: z.string().min(1),
   API_KEY_HASH_KEY: z.string().min(32),
-  PUBLIC_ISSUER_BASE_URL: z.string().url().default("http://localhost:8080")
+  PUBLIC_ISSUER_BASE_URL: z.string().url().default("http://localhost:8080"),
+  PASSWORD_MIN_LENGTH: z.coerce.number().int().min(12).max(128).default(12),
+  ARGON2_MEMORY_KIB: z.coerce.number().int().min(19_456).max(1_048_576).default(19_456),
+  ARGON2_ITERATIONS: z.coerce.number().int().min(2).max(10).default(2),
+  ARGON2_PARALLELISM: z.coerce.number().int().min(1).max(16).default(1)
 });
 
 export type AppConfig = Readonly<{
@@ -26,6 +30,12 @@ export type AppConfig = Readonly<{
   awsRegion: string;
   apiKeyHashKey: string;
   publicIssuerBaseUrl: string;
+  passwordMinLength: number;
+  argon2: Readonly<{
+    memoryKiB: number;
+    iterations: number;
+    parallelism: number;
+  }>;
 }>;
 
 export const loadLocalEnvironmentFile = (path = ".env"): void => {
@@ -49,6 +59,12 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     redisUrl: parsed.data.REDIS_URL,
     awsRegion: parsed.data.AWS_REGION,
     apiKeyHashKey: parsed.data.API_KEY_HASH_KEY,
-    publicIssuerBaseUrl: parsed.data.PUBLIC_ISSUER_BASE_URL
+    publicIssuerBaseUrl: parsed.data.PUBLIC_ISSUER_BASE_URL,
+    passwordMinLength: parsed.data.PASSWORD_MIN_LENGTH,
+    argon2: {
+      memoryKiB: parsed.data.ARGON2_MEMORY_KIB,
+      iterations: parsed.data.ARGON2_ITERATIONS,
+      parallelism: parsed.data.ARGON2_PARALLELISM
+    }
   };
 };
