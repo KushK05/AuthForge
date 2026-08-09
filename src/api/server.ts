@@ -2,6 +2,7 @@ import postgres from "postgres";
 
 import { buildApi } from "./app.js";
 import { PostgresApiKeyCreationRepository } from "../modules/developer-platform/infrastructure/postgres-api-key-creation-repository.js";
+import { PostgresApiKeyRevocationRepository } from "../modules/developer-platform/infrastructure/postgres-api-key-revocation-repository.js";
 import { PostgresDeveloperPlatformRepository } from "../modules/developer-platform/infrastructure/postgres-developer-platform-repository.js";
 import { loadConfig, loadLocalEnvironmentFile } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
@@ -12,7 +13,8 @@ const logger = new Logger(config.logLevel, config.environment);
 const database = postgres(config.databaseUrl, { max: 10 });
 const api = buildApi(config, logger, {
   repository: new PostgresDeveloperPlatformRepository(database),
-  apiKeyCreationRepository: new PostgresApiKeyCreationRepository(database)
+  apiKeyCreationRepository: new PostgresApiKeyCreationRepository(database),
+  apiKeyRevocationRepository: new PostgresApiKeyRevocationRepository(database)
 });
 
 const close = async (signal: string): Promise<void> => {

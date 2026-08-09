@@ -8,6 +8,10 @@ import type {
   ApiKeySummary
 } from "../../src/modules/developer-platform/application/create-api-key.js";
 import type { DeveloperPlatformRepository } from "../../src/modules/developer-platform/application/create-project.js";
+import type {
+  ApiKeyRevocationRepository,
+  ApiKeyRevocationTransaction
+} from "../../src/modules/developer-platform/application/revoke-api-key.js";
 import type { AppConfig } from "../../src/platform/config.js";
 
 const config: AppConfig = {
@@ -52,7 +56,24 @@ const createApi = () => {
   const apiKeyCreationRepository: ApiKeyCreationRepository = {
     transaction: async (operation) => operation(keyTransaction)
   };
-  return { api: buildApi(config, undefined, { repository, apiKeyCreationRepository }), createKey };
+  const revokeKey = vi.fn(async () => true);
+  const revocationTransaction: ApiKeyRevocationTransaction = {
+    lockIdempotencyScope: async () => undefined,
+    findIdempotencyRecord: async () => undefined,
+    findProjectInOrganization: async () => "project-2",
+    findApiKey: async () => key,
+    revokeApiKey: revokeKey,
+    appendAuditEvent: async () => undefined,
+    saveIdempotencyRecord: async () => undefined
+  };
+  const apiKeyRevocationRepository: ApiKeyRevocationRepository = {
+    transaction: async (operation) => operation(revocationTransaction)
+  };
+  return {
+    api: buildApi(config, undefined, { repository, apiKeyCreationRepository, apiKeyRevocationRepository }),
+    createKey,
+    revokeKey
+  };
 };
 
 describe("POST /v1/developer/projects/:projectId/keys", () => {
@@ -76,6 +97,23 @@ describe("POST /v1/developer/projects/:projectId/keys", () => {
     expect(second.statusCode).toBe(200);
     expect(second.json()).toEqual({ ...key });
     expect(createKey).toHaveBeenCalledTimes(1);
+    await api.close();
+  });
+
+  it("revokes an API key without returning its metadata", async () => {
+    const { api, revokeKey } = createApi();
+    const response = await api.inject({
+      method: "DELETE",
+      url: "/v1/developer/projects/6b1617e4-9a45-4cc9-869e-d9d7d9d3e401/keys/59a8b9e4-455a-4af8-a879-47c03b49d7cb",
+      headers: {
+        authorization: `Bearer sk_${"a".repeat(43)}`,
+        "idempotency-key": "api-key-revoke-123"
+      }
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe("");
+    expect(revokeKey).toHaveBeenCalledTimes(1);
     await api.close();
   });
 });

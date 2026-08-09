@@ -51,7 +51,7 @@ Refresh tokens are sent only in an HTTP-only Secure SameSite cookie for browser 
 | `POST /v1/developer/projects` | `projects:write` | `{name}`. Creates a project and its default development environment. Returns `201` with the project and environment summary; an idempotent replay returns the same summary with `200`. |
 | `GET /v1/developer/projects` | `projects:read` | Lists only projects within the developer organization. |
 | `POST /v1/developer/projects/{project_id}/keys` | `keys:write` | `{kind,scopes}`. Creates a scoped secret key or an unscoped publishable key for a project in the caller's organization. The raw key is returned only in the initial `201` response and is omitted from an idempotent replay (`200`). |
-| `DELETE /v1/developer/projects/{project_id}/keys/{key_id}` | `keys:write` | Revokes a key immediately. |
+| `DELETE /v1/developer/projects/{project_id}/keys/{key_id}` | `keys:write` | Revokes a key immediately and returns `204`; an idempotent replay also returns `204`. |
 | `PUT /v1/developer/projects/{project_id}/redirect-urls` | `projects:write` | Replaces validated HTTPS redirect allowlist. Localhost allowed only in development. |
 | `POST /v1/developer/projects/{project_id}/roles` | `roles:write` | Creates a role with known permissions. |
 | `PUT /v1/developer/projects/{project_id}/users/{user_id}/roles` | `roles:write` | Replaces the user's role assignment set. |
