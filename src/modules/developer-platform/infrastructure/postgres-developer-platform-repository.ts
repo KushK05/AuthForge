@@ -6,12 +6,23 @@ import type {
   DeveloperPlatformTransaction,
   ProjectSummary
 } from "../application/create-project.js";
+import type { ProjectListReader, ProjectPage } from "../application/list-projects.js";
 
 type ProjectRow = Readonly<{ id: string; name: string; status: "active" }>;
 type EnvironmentRow = Readonly<{ id: string; name: "development"; issuer: string; audience: string }>;
 type IdempotencyRow = Readonly<{ request_hash: Buffer; response_body: ProjectSummary }>;
 
-export class PostgresDeveloperPlatformRepository implements DeveloperPlatformRepository, SecretApiKeyReader {
+type ProjectListRow = Readonly<{
+  id: string;
+  name: string;
+  status: "active";
+  environment_id: string;
+  environment_name: "development";
+  issuer: string;
+  audience: string;
+}>;
+
+export class PostgresDeveloperPlatformRepository implements DeveloperPlatformRepository, SecretApiKeyReader, ProjectListReader {
   public constructor(private readonly sql: postgres.Sql) {}
 
   public async findActiveSecretApiKey(
@@ -32,6 +43,39 @@ export class PostgresDeveloperPlatformRepository implements DeveloperPlatformRep
 
   public transaction<T>(operation: (transaction: DeveloperPlatformTransaction) => Promise<T>): Promise<T> {
     return this.sql.begin(async (sql) => operation(new PostgresDeveloperPlatformTransaction(sql))) as Promise<T>;
+  }
+
+  public async listProjects(input: Readonly<{
+    authenticatedProjectId: string;
+    cursor: string | undefined;
+    limit: number;
+  }>): Promise<ProjectPage> {
+    const selectFields = this.sql`
+      SELECT target.id, target.name, target.status,
+        project_environments.id AS environment_id, project_environments.name AS environment_name,
+        project_environments.issuer, project_environments.audience
+      FROM projects AS target
+      INNER JOIN projects AS authenticated ON authenticated.id = ${input.authenticatedProjectId}
+      INNER JOIN project_environments ON project_environments.project_id = target.id AND project_environments.name = 'development'
+      WHERE target.organization_id = authenticated.organization_id
+        AND target.status = 'active' AND authenticated.status = 'active'
+    `;
+    const rows = input.cursor
+      ? await this.sql<ProjectListRow[]>`${selectFields} AND target.id > ${input.cursor}::uuid ORDER BY target.id ASC LIMIT ${input.limit + 1}`
+      : await this.sql<ProjectListRow[]>`${selectFields} ORDER BY target.id ASC LIMIT ${input.limit + 1}`;
+    const hasNextPage = rows.length > input.limit;
+    const data = rows.slice(0, input.limit).map((row) => ({
+      id: row.id,
+      name: row.name,
+      status: row.status,
+      defaultEnvironment: {
+        id: row.environment_id,
+        name: row.environment_name,
+        issuer: row.issuer,
+        audience: row.audience
+      }
+    }));
+    return { data, nextCursor: hasNextPage ? data.at(-1)?.id : undefined };
   }
 }
 

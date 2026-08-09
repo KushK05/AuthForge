@@ -19,6 +19,7 @@ import {
   createProject,
   type DeveloperPlatformRepository
 } from "../modules/developer-platform/application/create-project.js";
+import { listProjects, type ProjectListReader } from "../modules/developer-platform/application/list-projects.js";
 import { revokeApiKey, type ApiKeyRevocationRepository } from "../modules/developer-platform/application/revoke-api-key.js";
 import { replaceRedirectUrls, type RedirectUrlRepository } from "../modules/developer-platform/application/replace-redirect-urls.js";
 import type { SecretApiKeyReader } from "../modules/developer-platform/application/authenticate-secret-key.js";
@@ -34,6 +35,7 @@ declare module "fastify" {
 
 export type DeveloperPlatformDependencies = Readonly<{
   repository: DeveloperPlatformRepository & SecretApiKeyReader;
+  projectListReader?: ProjectListReader;
   apiKeyCreationRepository?: ApiKeyCreationRepository;
   apiKeyRevocationRepository?: ApiKeyRevocationRepository;
   redirectUrlRepository?: RedirectUrlRepository;
@@ -130,6 +132,31 @@ export const buildApi = (
     });
 
     return reply.status(result.replayed ? 200 : 201).send(result.project);
+  });
+
+  api.get("/v1/developer/projects", async (request) => {
+    const authorization = request.headers.authorization;
+    const match = typeof authorization === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorization) : null;
+    const secretApiKey = match?.[1];
+    if (!secretApiKey) throw invalidCredentials();
+    if (!developerPlatform?.projectListReader) throw unavailableDependency();
+    const query = z.object({
+      cursor: z.string().uuid().optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(50)
+    }).safeParse(request.query);
+    if (!query.success) throw invalidRequest("Invalid project list query");
+    const actor = await authenticateSecretApiKey(
+      developerPlatform.repository,
+      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
+      "projects:read",
+      new Date()
+    );
+    const page = await listProjects(developerPlatform.projectListReader, {
+      authenticatedProjectId: actor.projectId,
+      cursor: query.data.cursor,
+      limit: query.data.limit
+    });
+    return { data: page.data, next_cursor: page.nextCursor };
   });
 
   api.post("/v1/developer/projects/:projectId/keys", async (request, reply) => {

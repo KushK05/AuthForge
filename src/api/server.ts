@@ -12,8 +12,10 @@ loadLocalEnvironmentFile();
 const config = loadConfig();
 const logger = new Logger(config.logLevel, config.environment);
 const database = postgres(config.databaseUrl, { max: 10 });
+const developerPlatform = new PostgresDeveloperPlatformRepository(database);
 const api = buildApi(config, logger, {
-  repository: new PostgresDeveloperPlatformRepository(database),
+  repository: developerPlatform,
+  projectListReader: developerPlatform,
   apiKeyCreationRepository: new PostgresApiKeyCreationRepository(database),
   apiKeyRevocationRepository: new PostgresApiKeyRevocationRepository(database),
   redirectUrlRepository: new PostgresRedirectUrlRepository(database)
