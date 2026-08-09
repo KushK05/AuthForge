@@ -12,6 +12,10 @@ import type {
   ApiKeyRevocationRepository,
   ApiKeyRevocationTransaction
 } from "../../src/modules/developer-platform/application/revoke-api-key.js";
+import type {
+  RedirectUrlRepository,
+  RedirectUrlTransaction
+} from "../../src/modules/developer-platform/application/replace-redirect-urls.js";
 import type { AppConfig } from "../../src/platform/config.js";
 
 const config: AppConfig = {
@@ -51,7 +55,11 @@ const createApi = () => {
     transaction: async () => {
       throw new Error("Project creation repository was not expected");
     },
-    findActiveSecretApiKey: async () => ({ id: "key-1", projectId: "project-1", scopes: ["keys:write"] })
+    findActiveSecretApiKey: async () => ({
+      id: "key-1",
+      projectId: "project-1",
+      scopes: ["keys:write", "projects:write"]
+    })
   };
   const apiKeyCreationRepository: ApiKeyCreationRepository = {
     transaction: async (operation) => operation(keyTransaction)
@@ -69,10 +77,28 @@ const createApi = () => {
   const apiKeyRevocationRepository: ApiKeyRevocationRepository = {
     transaction: async (operation) => operation(revocationTransaction)
   };
+  const replaceUrls = vi.fn(async () => undefined);
+  const redirectTransaction: RedirectUrlTransaction = {
+    lockIdempotencyScope: async () => undefined,
+    findIdempotencyRecord: async () => undefined,
+    findProjectInOrganization: async () => "project-2",
+    replaceRedirectUrls: replaceUrls,
+    appendAuditEvent: async () => undefined,
+    saveIdempotencyRecord: async () => undefined
+  };
+  const redirectUrlRepository: RedirectUrlRepository = {
+    transaction: async (operation) => operation(redirectTransaction)
+  };
   return {
-    api: buildApi(config, undefined, { repository, apiKeyCreationRepository, apiKeyRevocationRepository }),
+    api: buildApi(config, undefined, {
+      repository,
+      apiKeyCreationRepository,
+      apiKeyRevocationRepository,
+      redirectUrlRepository
+    }),
     createKey,
-    revokeKey
+    revokeKey,
+    replaceUrls
   };
 };
 
@@ -114,6 +140,27 @@ describe("POST /v1/developer/projects/:projectId/keys", () => {
     expect(response.statusCode).toBe(204);
     expect(response.body).toBe("");
     expect(revokeKey).toHaveBeenCalledTimes(1);
+    await api.close();
+  });
+
+  it("replaces a project's normalized redirect URL allowlist", async () => {
+    const { api, replaceUrls } = createApi();
+    const response = await api.inject({
+      method: "PUT",
+      url: "/v1/developer/projects/6b1617e4-9a45-4cc9-869e-d9d7d9d3e401/redirect-urls",
+      headers: {
+        authorization: `Bearer sk_${"a".repeat(43)}`,
+        "idempotency-key": "redirect-replace-123"
+      },
+      payload: { urls: ["https://example.com/callback"] }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ urls: ["https://example.com/callback"] });
+    expect(replaceUrls).toHaveBeenCalledWith({
+      projectId: "project-2",
+      urls: ["https://example.com/callback"]
+    });
     await api.close();
   });
 });

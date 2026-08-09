@@ -20,6 +20,7 @@ import {
   type DeveloperPlatformRepository
 } from "../modules/developer-platform/application/create-project.js";
 import { revokeApiKey, type ApiKeyRevocationRepository } from "../modules/developer-platform/application/revoke-api-key.js";
+import { replaceRedirectUrls, type RedirectUrlRepository } from "../modules/developer-platform/application/replace-redirect-urls.js";
 import type { SecretApiKeyReader } from "../modules/developer-platform/application/authenticate-secret-key.js";
 import type { AppConfig } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
@@ -35,6 +36,7 @@ export type DeveloperPlatformDependencies = Readonly<{
   repository: DeveloperPlatformRepository & SecretApiKeyReader;
   apiKeyCreationRepository?: ApiKeyCreationRepository;
   apiKeyRevocationRepository?: ApiKeyRevocationRepository;
+  redirectUrlRepository?: RedirectUrlRepository;
 }>;
 
 const createProjectBodySchema = z.object({ name: z.string() }).strict();
@@ -208,6 +210,41 @@ export const buildApi = (
       now
     });
     return reply.status(204).send();
+  });
+
+  api.put("/v1/developer/projects/:projectId/redirect-urls", async (request, reply) => {
+    const authorization = request.headers.authorization;
+    const match = typeof authorization === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorization) : null;
+    const secretApiKey = match?.[1];
+    if (!secretApiKey) throw invalidCredentials();
+    if (!developerPlatform?.redirectUrlRepository) throw unavailableDependency();
+
+    const idempotencyKey = request.headers["idempotency-key"];
+    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
+      throw invalidRequest("A valid Idempotency-Key header is required");
+    }
+    const params = z.object({ projectId: z.string().uuid() }).safeParse(request.params);
+    const body = z.object({ urls: z.array(z.string()).max(50) }).strict().safeParse(request.body);
+    if (!params.success || !body.success) throw invalidRequest("Invalid redirect URL request");
+
+    const now = new Date();
+    const actor = await authenticateSecretApiKey(
+      developerPlatform.repository,
+      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
+      "projects:write",
+      now
+    );
+    const urls = await replaceRedirectUrls(developerPlatform.redirectUrlRepository, {
+      authenticatedProjectId: actor.projectId,
+      actorKeyId: actor.id,
+      targetProjectId: params.data.projectId,
+      urls: body.data.urls,
+      environment: config.environment,
+      correlationId: request.requestId,
+      idempotencyKey,
+      now
+    });
+    return reply.status(200).send({ urls });
   });
 
   return api;
