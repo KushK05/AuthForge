@@ -22,6 +22,7 @@ AuthForge handles credentials and identity data. Security invariants take priori
 
 - Password hashing uses Argon2id with centrally configured memory, iteration, parallelism, and salt parameters. Parameters are versioned for later rehashing.
 - Verification and reset tokens contain at least 256 bits of randomness, have short expirations, are single-use, and are stored only as hashes.
+- Email workers derive the opaque token from its record ID through a KMS-backed HMAC key; raw tokens are neither persisted nor placed in outbox or SQS payloads.
 - Access JWT lifetime defaults to 15 minutes. Use an asymmetric key controlled by KMS. The signing private key is never exported to app containers.
 - Refresh tokens default to 30 days, with an absolute family lifetime of 90 days. Store them as opaque hashed values. Reuse triggers family and session revocation, an audit event, and an alert threshold.
 - Password reset invalidates all sessions and increments `token_version`. Administrative disablement also increments it and revokes sessions.

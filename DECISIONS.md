@@ -48,6 +48,17 @@ This is an append-only log. Status values: `accepted`, `superseded`, `proposed`,
 - Migration and rollback: There is no existing runtime or persisted data. Future schema changes remain forward-only SQL migrations and application releases remain independently rollbackable when migrations are compatible.
 - Verification: Type checking, linting, unit tests, integration tests against PostgreSQL, contract tests for public endpoints, and the journeys in `TESTING.md` gate future work.
 
+## ADR-007: Derived opaque email tokens
+
+- Status: accepted
+- Date: 2026-08-09
+- Context: Verification and reset tokens must be stored only as hashes and must not appear in outbox or SQS payloads, while a worker must generate the corresponding email link from a record identifier.
+- Decision: Each token record receives its UUID before persistence. The opaque token is derived as a versioned UUID plus a 256-bit HMAC output from a KMS-backed derivation key. The complete token is still stored only as a keyed hash. Outbox and SQS carry only token and user record IDs.
+- Alternatives: Persisting encrypted raw tokens was rejected because it violates the hash-only token requirement. Putting raw tokens in SQS was rejected because queue payloads are not a secret store.
+- Consequences: The worker can reconstruct a valid link under a narrowly scoped derivation-key permission. Rotating the derivation key requires versioned validation support before activation.
+- Migration and rollback: No production token records exist. The token format includes a version prefix so a later key version can validate existing records during overlap.
+- Verification: Unit tests prove deterministic reconstruction and failed tampering; integration tests prove raw tokens are absent from database, audit, outbox, and queue payloads.
+
 ## ADR template
 
 ## ADR-NNN: Title

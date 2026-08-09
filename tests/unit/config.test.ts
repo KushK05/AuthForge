@@ -7,6 +7,7 @@ const validEnvironment = {
   REDIS_URL: "redis://localhost:6379",
   AWS_REGION: "us-east-1",
   API_KEY_HASH_KEY: "test-api-key-hashing-secret-value",
+  TOKEN_DERIVATION_KEY: "test-token-derivation-key-with-32-bytes",
   PUBLIC_ISSUER_BASE_URL: "http://localhost:8080"
 };
 
