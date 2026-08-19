@@ -12,6 +12,7 @@ import type {
 } from "../application/create-project.js";
 import type { ProjectListReader, ProjectPage } from "../application/list-projects.js";
 import type { RedirectUrlReader } from "../application/redirect-url-reader.js";
+import type { ProjectEnvironment, ProjectEnvironmentReader } from "../application/project-environment-reader.js";
 
 type ProjectRow = Readonly<{ id: string; name: string; status: "active" }>;
 type EnvironmentRow = Readonly<{ id: string; name: "development"; issuer: string; audience: string }>;
@@ -28,7 +29,7 @@ type ProjectListRow = Readonly<{
 }>;
 
 export class PostgresDeveloperPlatformRepository
-  implements DeveloperPlatformRepository, SecretApiKeyReader, PublishableApiKeyReader, ProjectListReader, RedirectUrlReader {
+  implements DeveloperPlatformRepository, SecretApiKeyReader, PublishableApiKeyReader, ProjectListReader, RedirectUrlReader, ProjectEnvironmentReader {
   public constructor(private readonly sql: postgres.Sql) {}
 
   public async findActiveSecretApiKey(
@@ -72,6 +73,16 @@ export class PostgresDeveloperPlatformRepository
       LIMIT 1
     `;
     return redirectUrl !== undefined;
+  }
+
+  public async findDefaultEnvironment(projectId: string): Promise<ProjectEnvironment | undefined> {
+    const [environment] = await this.sql<ProjectEnvironment[]>`
+      SELECT issuer, audience
+      FROM project_environments
+      WHERE project_id = ${projectId} AND name = 'development'
+      LIMIT 1
+    `;
+    return environment;
   }
 
   public transaction<T>(operation: (transaction: DeveloperPlatformTransaction) => Promise<T>): Promise<T> {

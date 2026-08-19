@@ -9,6 +9,7 @@ export type CreatedSession = Readonly<{
 }>;
 
 export type CreateSessionCommand = Readonly<{
+  sessionId: string;
   projectId: string;
   userId: string;
   tokenHashKey: string;
@@ -53,7 +54,7 @@ export const createSession = async (
   command: CreateSessionCommand
 ): Promise<CreatedSession> =>
   repository.transaction(async (transaction) => {
-    const sessionId = randomUUID();
+    const sessionId = command.sessionId;
     const familyId = randomUUID();
     const refreshToken = generateRefreshToken();
     const refreshExpiresAt = new Date(command.now.getTime() + refreshTokenLifetimeMs);

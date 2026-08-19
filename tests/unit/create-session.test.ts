@@ -8,7 +8,7 @@ import {
 import { hashRefreshToken } from "../../src/modules/sessions/domain/refresh-token.js";
 
 const command = {
-  projectId: "project-1", userId: "user-1", tokenHashKey: "test-api-key-hashing-secret-value",
+  sessionId: "session-1", projectId: "project-1", userId: "user-1", tokenHashKey: "test-api-key-hashing-secret-value",
   correlationId: "request_12345678", now: new Date("2026-08-11T00:00:00.000Z")
 };
 
