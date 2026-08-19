@@ -20,6 +20,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.1113.0",
     "@aws-sdk/client-sqs": "^3.1113.0",
     "argon2": "^0.45.1",
     "fastify": "^5.2.1",
