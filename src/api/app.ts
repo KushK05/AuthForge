@@ -11,6 +11,10 @@ import {
 } from "../shared/application/errors.js";
 import { authenticateSecretApiKey } from "../modules/developer-platform/application/authenticate-secret-key.js";
 import {
+  authenticatePublishableApiKey,
+  type PublishableApiKeyReader
+} from "../modules/developer-platform/application/authenticate-publishable-key.js";
+import {
   createApiKey,
   hashCreateApiKeyRequest,
   type ApiKeyCreationRepository
@@ -22,6 +26,9 @@ import {
 import { listProjects, type ProjectListReader } from "../modules/developer-platform/application/list-projects.js";
 import { revokeApiKey, type ApiKeyRevocationRepository } from "../modules/developer-platform/application/revoke-api-key.js";
 import { replaceRedirectUrls, type RedirectUrlRepository } from "../modules/developer-platform/application/replace-redirect-urls.js";
+import { normalizeRedirectUrls } from "../modules/developer-platform/application/replace-redirect-urls.js";
+import type { RedirectUrlReader } from "../modules/developer-platform/application/redirect-url-reader.js";
+import { hashSignUpRequest, signUp, type SignUpRepository } from "../modules/identity/application/sign-up.js";
 import type { SecretApiKeyReader } from "../modules/developer-platform/application/authenticate-secret-key.js";
 import type { AppConfig } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
@@ -39,6 +46,12 @@ export type DeveloperPlatformDependencies = Readonly<{
   apiKeyCreationRepository?: ApiKeyCreationRepository;
   apiKeyRevocationRepository?: ApiKeyRevocationRepository;
   redirectUrlRepository?: RedirectUrlRepository;
+  publishableApiKeyReader?: PublishableApiKeyReader;
+  redirectUrlReader?: RedirectUrlReader;
+}>;
+
+export type IdentityDependencies = Readonly<{
+  signUpRepository: SignUpRepository;
 }>;
 
 const createProjectBodySchema = z.object({ name: z.string() }).strict();
@@ -46,12 +59,18 @@ const createApiKeyBodySchema = z.object({
   kind: z.enum(["secret", "publishable"]),
   scopes: z.array(z.string().regex(/^[a-z][a-z0-9:_-]{0,63}$/)).max(50).default([])
 }).strict();
+const signUpBodySchema = z.object({
+  email: z.string().trim().email().max(320),
+  password: z.string().max(1_024),
+  redirect_url: z.string().max(2_048).optional()
+}).strict();
 const idempotencyKeyPattern = /^[A-Za-z0-9._:-]{1,255}$/;
 
 export const buildApi = (
   config: AppConfig,
   logger = new Logger(config.logLevel, config.environment),
-  developerPlatform?: DeveloperPlatformDependencies
+  developerPlatform?: DeveloperPlatformDependencies,
+  identity?: IdentityDependencies
 ): FastifyInstance => {
   const api = Fastify({ logger: false });
 
@@ -98,6 +117,57 @@ export const buildApi = (
 
   api.get("/healthz", async () => ({ status: "ok" }));
   api.get("/readyz", async () => ({ status: "ok" }));
+
+  api.post("/v1/sign-ups", async (request, reply) => {
+    const authorization = request.headers.authorization;
+    const match = typeof authorization === "string" ? /^Bearer (pk_[A-Za-z0-9_-]{43})$/.exec(authorization) : null;
+    const publishableApiKey = match?.[1];
+    if (!publishableApiKey) throw invalidCredentials();
+    if (!developerPlatform?.publishableApiKeyReader || !identity) throw unavailableDependency();
+
+    const idempotencyKey = request.headers["idempotency-key"];
+    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
+      throw invalidRequest("A valid Idempotency-Key header is required");
+    }
+    const body = signUpBodySchema.safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid sign-up request");
+
+    const now = new Date();
+    const actor = await authenticatePublishableApiKey(
+      developerPlatform.publishableApiKeyReader,
+      hashOpaqueSecret(publishableApiKey, config.apiKeyHashKey),
+      now
+    );
+    let redirectUrl: string | undefined;
+    if (body.data.redirect_url) {
+      if (!developerPlatform.redirectUrlReader) throw unavailableDependency();
+      const normalizedRedirectUrl = normalizeRedirectUrls([body.data.redirect_url], config.environment)[0];
+      if (!normalizedRedirectUrl) throw invalidRequest("Invalid redirect_url");
+      if (!(await developerPlatform.redirectUrlReader.hasRedirectUrl({ projectId: actor.projectId, url: normalizedRedirectUrl }))) {
+        throw invalidRequest("redirect_url is not configured for this project");
+      }
+      redirectUrl = normalizedRedirectUrl;
+    }
+
+    const result = await signUp(identity.signUpRepository, {
+      authenticatedProjectId: actor.projectId,
+      actorKeyId: actor.id,
+      email: body.data.email,
+      password: body.data.password,
+      redirectUrl,
+      correlationId: request.requestId,
+      idempotencyKey,
+      requestHash: hashSignUpRequest(
+        { email: body.data.email, password: body.data.password, redirectUrl },
+        config.apiKeyHashKey
+      ),
+      tokenDerivationKey: config.tokenDerivationKey,
+      passwordMinimumLength: config.passwordMinLength,
+      argon2: config.argon2,
+      now
+    });
+    return reply.status(202).send(result);
+  });
 
   api.post("/v1/developer/projects", async (request, reply) => {
     const authorization = request.headers.authorization;

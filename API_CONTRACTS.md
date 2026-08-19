@@ -33,7 +33,7 @@ Use `400` invalid request, `401` invalid or expired credentials, `403` authentic
 
 | Method and path | Auth | Contract |
 | --- | --- | --- |
-| `POST /v1/sign-ups` | publishable key | `{email,password,redirect_url?}`. Creates pending user and queues verification. Returns `202` with non-sensitive status. |
+| `POST /v1/sign-ups` | publishable key | `{email,password,redirect_url?}`. Creates a pending user and queues verification. `redirect_url`, when supplied, must exactly match the project's normalized allowlist. Returns `202` with `{status:"pending_verification"}` regardless of whether the email was already registered. |
 | `POST /v1/email-verifications/confirm` | token | `{token}`. Single-use confirmation. Returns verified user summary. |
 | `POST /v1/sign-ins` | publishable key | `{email,password}`. Returns `access_token`, `refresh_token`, `expires_in`, and user summary. Generic `401` on failure. |
 | `POST /v1/token` | refresh token | `{refresh_token}`. Atomically rotates refresh token. Returns a new token pair. |

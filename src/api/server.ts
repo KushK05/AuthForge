@@ -5,6 +5,7 @@ import { PostgresApiKeyCreationRepository } from "../modules/developer-platform/
 import { PostgresApiKeyRevocationRepository } from "../modules/developer-platform/infrastructure/postgres-api-key-revocation-repository.js";
 import { PostgresRedirectUrlRepository } from "../modules/developer-platform/infrastructure/postgres-redirect-url-repository.js";
 import { PostgresDeveloperPlatformRepository } from "../modules/developer-platform/infrastructure/postgres-developer-platform-repository.js";
+import { PostgresSignUpRepository } from "../modules/identity/infrastructure/postgres-sign-up-repository.js";
 import { loadConfig, loadLocalEnvironmentFile } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
 
@@ -18,7 +19,11 @@ const api = buildApi(config, logger, {
   projectListReader: developerPlatform,
   apiKeyCreationRepository: new PostgresApiKeyCreationRepository(database),
   apiKeyRevocationRepository: new PostgresApiKeyRevocationRepository(database),
-  redirectUrlRepository: new PostgresRedirectUrlRepository(database)
+  redirectUrlRepository: new PostgresRedirectUrlRepository(database),
+  publishableApiKeyReader: developerPlatform,
+  redirectUrlReader: developerPlatform
+}, {
+  signUpRepository: new PostgresSignUpRepository(database)
 });
 
 const close = async (signal: string): Promise<void> => {

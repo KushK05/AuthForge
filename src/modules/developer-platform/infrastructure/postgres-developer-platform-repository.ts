@@ -2,11 +2,16 @@ import type postgres from "postgres";
 
 import type { AuthenticatedSecretApiKey, SecretApiKeyReader } from "../application/authenticate-secret-key.js";
 import type {
+  AuthenticatedPublishableApiKey,
+  PublishableApiKeyReader
+} from "../application/authenticate-publishable-key.js";
+import type {
   DeveloperPlatformRepository,
   DeveloperPlatformTransaction,
   ProjectSummary
 } from "../application/create-project.js";
 import type { ProjectListReader, ProjectPage } from "../application/list-projects.js";
+import type { RedirectUrlReader } from "../application/redirect-url-reader.js";
 
 type ProjectRow = Readonly<{ id: string; name: string; status: "active" }>;
 type EnvironmentRow = Readonly<{ id: string; name: "development"; issuer: string; audience: string }>;
@@ -22,7 +27,8 @@ type ProjectListRow = Readonly<{
   audience: string;
 }>;
 
-export class PostgresDeveloperPlatformRepository implements DeveloperPlatformRepository, SecretApiKeyReader, ProjectListReader {
+export class PostgresDeveloperPlatformRepository
+  implements DeveloperPlatformRepository, SecretApiKeyReader, PublishableApiKeyReader, ProjectListReader, RedirectUrlReader {
   public constructor(private readonly sql: postgres.Sql) {}
 
   public async findActiveSecretApiKey(
@@ -39,6 +45,33 @@ export class PostgresDeveloperPlatformRepository implements DeveloperPlatformRep
       LIMIT 1
     `;
     return key;
+  }
+
+  public async findActivePublishableApiKey(
+    secretHash: Buffer,
+    now: Date
+  ): Promise<AuthenticatedPublishableApiKey | undefined> {
+    const [key] = await this.sql<AuthenticatedPublishableApiKey[]>`
+      SELECT api_keys.id, api_keys.project_id AS "projectId"
+      FROM api_keys
+      INNER JOIN projects ON projects.id = api_keys.project_id
+      WHERE api_keys.kind = 'publishable'
+        AND api_keys.secret_hash = ${secretHash}
+        AND api_keys.revoked_at IS NULL
+        AND (api_keys.expires_at IS NULL OR api_keys.expires_at > ${now})
+        AND projects.status = 'active'
+      LIMIT 1
+    `;
+    return key;
+  }
+
+  public async hasRedirectUrl(input: Readonly<{ projectId: string; url: string }>): Promise<boolean> {
+    const [redirectUrl] = await this.sql<{ id: string }[]>`
+      SELECT id FROM redirect_urls
+      WHERE project_id = ${input.projectId} AND url = ${input.url}
+      LIMIT 1
+    `;
+    return redirectUrl !== undefined;
   }
 
   public transaction<T>(operation: (transaction: DeveloperPlatformTransaction) => Promise<T>): Promise<T> {
