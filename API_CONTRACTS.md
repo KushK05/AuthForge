@@ -54,7 +54,7 @@ Refresh tokens are sent only in an HTTP-only Secure SameSite cookie for browser 
 | `DELETE /v1/developer/projects/{project_id}/keys/{key_id}` | `keys:write` | Revokes a key immediately and returns `204`; an idempotent replay also returns `204`. |
 | `PUT /v1/developer/projects/{project_id}/redirect-urls` | `projects:write` | `{urls}`. Replaces the validated, exact normalized redirect allowlist and returns `{urls}`. HTTPS is required, except HTTP loopback URLs in development. |
 | `POST /v1/developer/projects/{project_id}/roles` | `roles:write` | `{name,description?,permissions}`. Creates a role in the authenticated project from known permissions. Returns `201` with `{id,name,description?,permissions}`; an idempotent replay returns `200`. |
-| `PUT /v1/developer/projects/{project_id}/users/{user_id}/roles` | `roles:write` | Replaces the user's role assignment set. |
+| `PUT /v1/developer/projects/{project_id}/users/{user_id}/roles` | `roles:write` | `{role_ids}`. Replaces the user's project-scoped role assignment set and returns `{role_ids}`. |
 | `GET /v1/developer/projects/{project_id}/audit-events` | `audit:read` | Cursor-paginated, redacted audit view. |
 
 ## JWT contract

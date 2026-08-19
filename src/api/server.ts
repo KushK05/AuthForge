@@ -8,6 +8,8 @@ import { PostgresDeveloperPlatformRepository } from "../modules/developer-platfo
 import { PostgresSignUpRepository } from "../modules/identity/infrastructure/postgres-sign-up-repository.js";
 import { PostgresEmailVerificationRepository } from "../modules/identity/infrastructure/postgres-email-verification-repository.js";
 import { PostgresRoleCreationRepository } from "../modules/authorization/infrastructure/postgres-role-creation-repository.js";
+import { PostgresUserRoleAssignmentRepository } from "../modules/authorization/infrastructure/postgres-user-role-assignment-repository.js";
+import { PostgresIdentityUserReader } from "../modules/identity/infrastructure/postgres-identity-user-reader.js";
 import { loadConfig, loadLocalEnvironmentFile } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
 
@@ -26,9 +28,11 @@ const api = buildApi(config, logger, {
   redirectUrlReader: developerPlatform
 }, {
   signUpRepository: new PostgresSignUpRepository(database),
-  emailVerificationRepository: new PostgresEmailVerificationRepository(database)
+  emailVerificationRepository: new PostgresEmailVerificationRepository(database),
+  userReader: new PostgresIdentityUserReader(database)
 }, {
-  roleCreationRepository: new PostgresRoleCreationRepository(database)
+  roleCreationRepository: new PostgresRoleCreationRepository(database),
+  userRoleAssignmentRepository: new PostgresUserRoleAssignmentRepository(database)
 });
 
 const close = async (signal: string): Promise<void> => {

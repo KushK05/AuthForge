@@ -34,10 +34,15 @@ import {
   type RoleCreationRepository
 } from "../modules/authorization/application/create-role.js";
 import {
+  replaceUserRoles,
+  type UserRoleAssignmentRepository
+} from "../modules/authorization/application/replace-user-roles.js";
+import {
   confirmEmailVerification,
   type EmailVerificationRepository
 } from "../modules/identity/application/confirm-email-verification.js";
 import { hashSignUpRequest, signUp, type SignUpRepository } from "../modules/identity/application/sign-up.js";
+import type { IdentityUserReader } from "../modules/identity/application/user-reader.js";
 import type { SecretApiKeyReader } from "../modules/developer-platform/application/authenticate-secret-key.js";
 import type { AppConfig } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
@@ -62,10 +67,12 @@ export type DeveloperPlatformDependencies = Readonly<{
 export type IdentityDependencies = Readonly<{
   signUpRepository: SignUpRepository;
   emailVerificationRepository: EmailVerificationRepository;
+  userReader?: IdentityUserReader;
 }>;
 
 export type AuthorizationDependencies = Readonly<{
   roleCreationRepository: RoleCreationRepository;
+  userRoleAssignmentRepository?: UserRoleAssignmentRepository;
 }>;
 
 const createProjectBodySchema = z.object({ name: z.string() }).strict();
@@ -83,6 +90,9 @@ const createRoleBodySchema = z.object({
   name: z.string(),
   description: z.string().max(1_024).optional(),
   permissions: z.array(z.string().regex(/^[a-z][a-z0-9:_-]{0,63}$/)).min(1).max(50)
+}).strict();
+const replaceUserRolesBodySchema = z.object({
+  role_ids: z.array(z.string().uuid()).max(50)
 }).strict();
 const idempotencyKeyPattern = /^[A-Za-z0-9._:-]{1,255}$/;
 
@@ -235,6 +245,41 @@ export const buildApi = (
       now
     });
     return reply.status(result.replayed ? 200 : 201).send(result.role);
+  });
+
+  api.put("/v1/developer/projects/:projectId/users/:userId/roles", async (request) => {
+    const authorizationHeader = request.headers.authorization;
+    const match = typeof authorizationHeader === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorizationHeader) : null;
+    const secretApiKey = match?.[1];
+    if (!secretApiKey) throw invalidCredentials();
+    if (!developerPlatform || !identity?.userReader || !authorization?.userRoleAssignmentRepository) {
+      throw unavailableDependency();
+    }
+    const idempotencyKey = request.headers["idempotency-key"];
+    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
+      throw invalidRequest("A valid Idempotency-Key header is required");
+    }
+    const params = z.object({ projectId: z.string().uuid(), userId: z.string().uuid() }).safeParse(request.params);
+    const body = replaceUserRolesBodySchema.safeParse(request.body);
+    if (!params.success || !body.success) throw invalidRequest("Invalid user role assignment request");
+    const now = new Date();
+    const actor = await authenticateSecretApiKey(
+      developerPlatform.repository,
+      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
+      "roles:write",
+      now
+    );
+    const roleIds = await replaceUserRoles(authorization.userRoleAssignmentRepository, identity.userReader, {
+      authenticatedProjectId: actor.projectId,
+      actorKeyId: actor.id,
+      targetProjectId: params.data.projectId,
+      userId: params.data.userId,
+      roleIds: body.data.role_ids,
+      correlationId: request.requestId,
+      idempotencyKey,
+      now
+    });
+    return { role_ids: roleIds };
   });
 
   api.post("/v1/developer/projects", async (request, reply) => {
