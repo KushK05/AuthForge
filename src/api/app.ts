@@ -28,6 +28,10 @@ import { revokeApiKey, type ApiKeyRevocationRepository } from "../modules/develo
 import { replaceRedirectUrls, type RedirectUrlRepository } from "../modules/developer-platform/application/replace-redirect-urls.js";
 import { normalizeRedirectUrls } from "../modules/developer-platform/application/replace-redirect-urls.js";
 import type { RedirectUrlReader } from "../modules/developer-platform/application/redirect-url-reader.js";
+import {
+  confirmEmailVerification,
+  type EmailVerificationRepository
+} from "../modules/identity/application/confirm-email-verification.js";
 import { hashSignUpRequest, signUp, type SignUpRepository } from "../modules/identity/application/sign-up.js";
 import type { SecretApiKeyReader } from "../modules/developer-platform/application/authenticate-secret-key.js";
 import type { AppConfig } from "../platform/config.js";
@@ -52,6 +56,7 @@ export type DeveloperPlatformDependencies = Readonly<{
 
 export type IdentityDependencies = Readonly<{
   signUpRepository: SignUpRepository;
+  emailVerificationRepository: EmailVerificationRepository;
 }>;
 
 const createProjectBodySchema = z.object({ name: z.string() }).strict();
@@ -64,6 +69,7 @@ const signUpBodySchema = z.object({
   password: z.string().max(1_024),
   redirect_url: z.string().max(2_048).optional()
 }).strict();
+const confirmEmailVerificationBodySchema = z.object({ token: z.string().max(512) }).strict();
 const idempotencyKeyPattern = /^[A-Za-z0-9._:-]{1,255}$/;
 
 export const buildApi = (
@@ -167,6 +173,18 @@ export const buildApi = (
       now
     });
     return reply.status(202).send(result);
+  });
+
+  api.post("/v1/email-verifications/confirm", async (request) => {
+    if (!identity) throw unavailableDependency();
+    const body = confirmEmailVerificationBodySchema.safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid email verification request");
+    return confirmEmailVerification(identity.emailVerificationRepository, {
+      token: body.data.token,
+      tokenDerivationKey: config.tokenDerivationKey,
+      correlationId: request.requestId,
+      now: new Date()
+    });
   });
 
   api.post("/v1/developer/projects", async (request, reply) => {

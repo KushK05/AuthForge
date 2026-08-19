@@ -11,7 +11,7 @@ Authentication schemes:
 - `User access JWT`: `Authorization: Bearer <jwt>`. Used for an authenticated end user in a project.
 - `Developer session`: a separate, secure, HTTP-only browser session for console routes. Never accept it for end-user project APIs.
 
-All state-changing `POST`, `PUT`, `PATCH`, and `DELETE` endpoints accept `Idempotency-Key` unless explicitly exempted. The key is unique within authenticated principal, route, and project for 24 hours. Reuse with a different request hash returns `409 idempotency_key_reused`.
+All state-changing `POST`, `PUT`, `PATCH`, and `DELETE` endpoints accept `Idempotency-Key` unless explicitly exempted. The key is unique within authenticated principal, route, and project for 24 hours. Reuse with a different request hash returns `409 idempotency_key_reused`. Token-consumption confirmations are exempt because their opaque, single-use token provides replay protection.
 
 ## Error model
 
@@ -34,7 +34,7 @@ Use `400` invalid request, `401` invalid or expired credentials, `403` authentic
 | Method and path | Auth | Contract |
 | --- | --- | --- |
 | `POST /v1/sign-ups` | publishable key | `{email,password,redirect_url?}`. Creates a pending user and queues verification. `redirect_url`, when supplied, must exactly match the project's normalized allowlist. Returns `202` with `{status:"pending_verification"}` regardless of whether the email was already registered. |
-| `POST /v1/email-verifications/confirm` | token | `{token}`. Single-use confirmation. Returns verified user summary. |
+| `POST /v1/email-verifications/confirm` | token | `{token}`. Single-use confirmation. Returns `{id,status:"active",emailVerifiedAt}`. |
 | `POST /v1/sign-ins` | publishable key | `{email,password}`. Returns `access_token`, `refresh_token`, `expires_in`, and user summary. Generic `401` on failure. |
 | `POST /v1/token` | refresh token | `{refresh_token}`. Atomically rotates refresh token. Returns a new token pair. |
 | `POST /v1/sign-outs` | access JWT | Revokes current session. `204` is idempotent. |

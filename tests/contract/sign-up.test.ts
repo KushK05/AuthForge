@@ -8,6 +8,7 @@ import {
 import type { DeveloperPlatformRepository } from "../../src/modules/developer-platform/application/create-project.js";
 import type { SecretApiKeyReader } from "../../src/modules/developer-platform/application/authenticate-secret-key.js";
 import type { SignUpRepository, SignUpTransaction } from "../../src/modules/identity/application/sign-up.js";
+import type { EmailVerificationRepository } from "../../src/modules/identity/application/confirm-email-verification.js";
 import type { AppConfig } from "../../src/platform/config.js";
 
 const config: AppConfig = {
@@ -46,7 +47,8 @@ const createDependencies = (redirectUrlAllowed = true): Readonly<{
     }
   };
   const identity: IdentityDependencies = {
-    signUpRepository: { transaction: async (operation) => operation(transaction) } satisfies SignUpRepository
+    signUpRepository: { transaction: async (operation) => operation(transaction) } satisfies SignUpRepository,
+    emailVerificationRepository: {} as EmailVerificationRepository
   };
   const repository = {} as DeveloperPlatformRepository & SecretApiKeyReader;
   return {
