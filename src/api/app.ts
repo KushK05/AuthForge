@@ -29,6 +29,11 @@ import { replaceRedirectUrls, type RedirectUrlRepository } from "../modules/deve
 import { normalizeRedirectUrls } from "../modules/developer-platform/application/replace-redirect-urls.js";
 import type { RedirectUrlReader } from "../modules/developer-platform/application/redirect-url-reader.js";
 import {
+  createRole,
+  hashCreateRoleRequest,
+  type RoleCreationRepository
+} from "../modules/authorization/application/create-role.js";
+import {
   confirmEmailVerification,
   type EmailVerificationRepository
 } from "../modules/identity/application/confirm-email-verification.js";
@@ -59,6 +64,10 @@ export type IdentityDependencies = Readonly<{
   emailVerificationRepository: EmailVerificationRepository;
 }>;
 
+export type AuthorizationDependencies = Readonly<{
+  roleCreationRepository: RoleCreationRepository;
+}>;
+
 const createProjectBodySchema = z.object({ name: z.string() }).strict();
 const createApiKeyBodySchema = z.object({
   kind: z.enum(["secret", "publishable"]),
@@ -70,13 +79,19 @@ const signUpBodySchema = z.object({
   redirect_url: z.string().max(2_048).optional()
 }).strict();
 const confirmEmailVerificationBodySchema = z.object({ token: z.string().max(512) }).strict();
+const createRoleBodySchema = z.object({
+  name: z.string(),
+  description: z.string().max(1_024).optional(),
+  permissions: z.array(z.string().regex(/^[a-z][a-z0-9:_-]{0,63}$/)).min(1).max(50)
+}).strict();
 const idempotencyKeyPattern = /^[A-Za-z0-9._:-]{1,255}$/;
 
 export const buildApi = (
   config: AppConfig,
   logger = new Logger(config.logLevel, config.environment),
   developerPlatform?: DeveloperPlatformDependencies,
-  identity?: IdentityDependencies
+  identity?: IdentityDependencies,
+  authorization?: AuthorizationDependencies
 ): FastifyInstance => {
   const api = Fastify({ logger: false });
 
@@ -185,6 +200,41 @@ export const buildApi = (
       correlationId: request.requestId,
       now: new Date()
     });
+  });
+
+  api.post("/v1/developer/projects/:projectId/roles", async (request, reply) => {
+    const authorizationHeader = request.headers.authorization;
+    const match = typeof authorizationHeader === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorizationHeader) : null;
+    const secretApiKey = match?.[1];
+    if (!secretApiKey) throw invalidCredentials();
+    if (!developerPlatform || !authorization) throw unavailableDependency();
+    const idempotencyKey = request.headers["idempotency-key"];
+    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
+      throw invalidRequest("A valid Idempotency-Key header is required");
+    }
+    const params = z.object({ projectId: z.string().uuid() }).safeParse(request.params);
+    const body = createRoleBodySchema.safeParse(request.body);
+    if (!params.success || !body.success) throw invalidRequest("Invalid role creation request");
+    const now = new Date();
+    const actor = await authenticateSecretApiKey(
+      developerPlatform.repository,
+      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
+      "roles:write",
+      now
+    );
+    const result = await createRole(authorization.roleCreationRepository, {
+      authenticatedProjectId: actor.projectId,
+      actorKeyId: actor.id,
+      targetProjectId: params.data.projectId,
+      name: body.data.name,
+      description: body.data.description,
+      permissions: body.data.permissions,
+      correlationId: request.requestId,
+      idempotencyKey,
+      requestHash: hashCreateRoleRequest({ ...body.data, description: body.data.description }),
+      now
+    });
+    return reply.status(result.replayed ? 200 : 201).send(result.role);
   });
 
   api.post("/v1/developer/projects", async (request, reply) => {

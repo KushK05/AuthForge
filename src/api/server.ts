@@ -7,6 +7,7 @@ import { PostgresRedirectUrlRepository } from "../modules/developer-platform/inf
 import { PostgresDeveloperPlatformRepository } from "../modules/developer-platform/infrastructure/postgres-developer-platform-repository.js";
 import { PostgresSignUpRepository } from "../modules/identity/infrastructure/postgres-sign-up-repository.js";
 import { PostgresEmailVerificationRepository } from "../modules/identity/infrastructure/postgres-email-verification-repository.js";
+import { PostgresRoleCreationRepository } from "../modules/authorization/infrastructure/postgres-role-creation-repository.js";
 import { loadConfig, loadLocalEnvironmentFile } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
 
@@ -26,6 +27,8 @@ const api = buildApi(config, logger, {
 }, {
   signUpRepository: new PostgresSignUpRepository(database),
   emailVerificationRepository: new PostgresEmailVerificationRepository(database)
+}, {
+  roleCreationRepository: new PostgresRoleCreationRepository(database)
 });
 
 const close = async (signal: string): Promise<void> => {
