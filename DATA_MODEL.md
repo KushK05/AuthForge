@@ -20,15 +20,15 @@ Use a restricted database role at runtime. Migrations use a separate role. Appli
 | `verification_tokens` | identity | `id`, `user_id`, `project_id`, `token_hash`, `expires_at`, `consumed_at`; only one active token per purpose/user enforced by partial unique index. |
 | `password_reset_tokens` | identity | Same opaque-token pattern; consume once and expire quickly. |
 | `sessions` | sessions | `id`, `project_id`, `user_id`, `created_at`, `last_seen_at`, `revoked_at`, `revoke_reason`, device metadata minimized. |
-| `refresh_token_families` | sessions | `id`, `project_id`, `user_id`, `session_id`, `revoked_at`, `replay_detected_at`. |
-| `refresh_tokens` | sessions | `id`, `family_id`, `token_hash`, `expires_at`, `consumed_at`, `replaced_by_id`; hash unique. |
+| `refresh_token_families` | sessions | `id`, `project_id`, `user_id`, `session_id`, `absolute_expires_at`, `revoked_at`, `replay_detected_at`. |
+| `refresh_tokens` | sessions | `id`, `project_id`, `family_id`, `token_hash`, `expires_at`, `consumed_at`, `replaced_by_id`; hash unique. |
 | `roles` | authorization | `id`, `project_id`, `name`, `description`; unique `(project_id,name)`. |
 | `permissions` | authorization | `id`, `code`; platform-controlled permission vocabulary. |
 | `role_permissions` | authorization | unique `(role_id,permission_id)`. |
 | `user_roles` | authorization | `project_id`, `user_id`, `role_id`; uniqueness prevents duplicate grants. |
 | `audit_events` | audit | append-only: `id`, `project_id`, `actor_type`, `actor_id`, `action`, `target_type`, `target_id`, `occurred_at`, redacted metadata, correlation ID. |
 | `outbox_events` | notifications/shared | `id`, `event_type`, `event_version`, payload reference, `occurred_at`, `published_at`, lease fields. |
-| `consumer_inbox` | notifications/shared | unique `event_id` per consumer; supports at-least-once deduplication. |
+| `consumer_inbox` | notifications/shared | unique `(event_id,consumer_name)` with processing lease and completion timestamp; supports at-least-once deduplication. |
 | `idempotency_records` | shared | scoped key, request hash, response status/body reference, expiration; unique scope/key. |
 
 ## Sensitive data rules
