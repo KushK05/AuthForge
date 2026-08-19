@@ -1,14 +1,20 @@
 import { createPublicKey, randomUUID } from "node:crypto";
 
-import { GetPublicKeyCommand, SignCommand, type KMSClient } from "@aws-sdk/client-kms";
+import { GetPublicKeyCommand, KMSClient, SignCommand } from "@aws-sdk/client-kms";
 
-import type { AccessTokenClaims, AccessTokenSigner } from "../application/access-token-signer.js";
+import type {
+  AccessTokenClaims,
+  AccessTokenJwksProvider,
+  AccessTokenSigner,
+  JsonWebKeySet
+} from "../application/access-token-signer.js";
+import type { AppConfig } from "../../../platform/config.js";
 
 const accessTokenLifetimeSeconds = 15 * 60;
 
 const base64UrlJson = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString("base64url");
 
-export class KmsAccessTokenSigner implements AccessTokenSigner {
+export class KmsAccessTokenSigner implements AccessTokenSigner, AccessTokenJwksProvider {
   public constructor(
     private readonly client: Pick<KMSClient, "send">,
     private readonly keyId: string
@@ -41,7 +47,7 @@ export class KmsAccessTokenSigner implements AccessTokenSigner {
     return { accessToken: `${signingInput}.${Buffer.from(result.Signature).toString("base64url")}`, expiresIn: accessTokenLifetimeSeconds };
   }
 
-  public async jwks(): Promise<Readonly<{ keys: readonly Record<string, string>[] }>> {
+  public async jwks(): Promise<JsonWebKeySet> {
     const result = await this.client.send(new GetPublicKeyCommand({ KeyId: this.keyId }));
     if (
       !result.PublicKey ||
@@ -56,3 +62,14 @@ export class KmsAccessTokenSigner implements AccessTokenSigner {
     return { keys: [{ ...jwk, kid: this.keyId, alg: "PS256", use: "sig" }] };
   }
 }
+
+export const createKmsAccessTokenSigner = (config: AppConfig): KmsAccessTokenSigner | undefined =>
+  config.kmsJwtSigningKeyId
+    ? new KmsAccessTokenSigner(
+      new KMSClient({
+        region: config.awsRegion,
+        ...(config.awsKmsEndpointUrl ? { endpoint: config.awsKmsEndpointUrl } : {})
+      }),
+      config.kmsJwtSigningKeyId
+    )
+    : undefined;

@@ -59,7 +59,7 @@ Refresh tokens are sent only in an HTTP-only Secure SameSite cookie for browser 
 
 ## JWT contract
 
-Access JWTs are asymmetric and include `iss`, `aud`, `sub`, `exp`, `iat`, `jti`, `sid`, `project_id`, `token_version`, `roles`, and `scope` as applicable. `aud` is the project environment identifier. Default lifetime is 15 minutes. Publish a project-scoped JWKS endpoint at `GET /v1/projects/{project_id}/.well-known/jwks.json` with cache headers and key ID rotation overlap. Consumers must verify signature, issuer, audience, expiration, not-before when present, and project context.
+Access JWTs use `PS256`, are signed by a KMS `SIGN_VERIFY` RSA key, and include `iss`, `aud`, `sub`, `exp`, `iat`, `jti`, `sid`, `project_id`, `token_version`, `roles`, and `scope` as applicable. `aud` is the project environment identifier. Default lifetime is 15 minutes. Publish a project-scoped JWKS endpoint at `GET /v1/projects/{project_id}/.well-known/jwks.json` with cache headers and key ID rotation overlap. Consumers must verify signature, issuer, audience, expiration, not-before when present, and project context.
 
 ## Compatibility policy
 

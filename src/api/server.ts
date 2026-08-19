@@ -10,6 +10,7 @@ import { PostgresEmailVerificationRepository } from "../modules/identity/infrast
 import { PostgresRoleCreationRepository } from "../modules/authorization/infrastructure/postgres-role-creation-repository.js";
 import { PostgresUserRoleAssignmentRepository } from "../modules/authorization/infrastructure/postgres-user-role-assignment-repository.js";
 import { PostgresIdentityUserReader } from "../modules/identity/infrastructure/postgres-identity-user-reader.js";
+import { createKmsAccessTokenSigner } from "../modules/sessions/infrastructure/kms-access-token-signer.js";
 import { loadConfig, loadLocalEnvironmentFile } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
 
@@ -33,7 +34,10 @@ const api = buildApi(config, logger, {
 }, {
   roleCreationRepository: new PostgresRoleCreationRepository(database),
   userRoleAssignmentRepository: new PostgresUserRoleAssignmentRepository(database)
-});
+}, (() => {
+  const accessTokenSigner = createKmsAccessTokenSigner(config);
+  return accessTokenSigner ? { accessTokenJwksProvider: accessTokenSigner } : undefined;
+})());
 
 const close = async (signal: string): Promise<void> => {
   logger.info("Stopping API", { signal });

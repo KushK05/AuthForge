@@ -59,6 +59,17 @@ This is an append-only log. Status values: `accepted`, `superseded`, `proposed`,
 - Migration and rollback: No production token records exist. The token format includes a version prefix so a later key version can validate existing records during overlap.
 - Verification: Unit tests prove deterministic reconstruction and failed tampering; integration tests prove raw tokens are absent from database, audit, outbox, and queue payloads.
 
+## ADR-008: PS256 KMS access-token keys
+
+- Status: accepted
+- Date: 2026-08-19
+- Context: Access tokens need an interoperable asymmetric signature and a project JWKS endpoint without private key material entering the application process.
+- Decision: Use a KMS RSA `SIGN_VERIFY` key with `RSASSA_PSS_SHA_256` (`PS256`). The API obtains the public key from KMS and publishes it as a JWKS entry whose `kid` is the configured KMS key identifier.
+- Alternatives: `RS256` was not selected because RSA-PSS is the stronger default. ECDSA was not selected because KMS returns DER-encoded signatures that require additional JWT signature conversion.
+- Consequences: The API role needs only `kms:Sign` and `kms:GetPublicKey`; private keys remain in KMS. Verifiers can cache the public JWKS for the response lifetime. KMS signing availability is required to complete a sign-in.
+- Migration and rollback: No production access tokens are issued yet. Future rotations publish old and new key IDs during the maximum access-token lifetime before removing the old key.
+- Verification: Unit tests verify the returned JWT signature with the generated public key, and contract tests verify the JWKS response and cache header.
+
 ## ADR template
 
 ## ADR-NNN: Title

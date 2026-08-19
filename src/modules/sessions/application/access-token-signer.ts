@@ -13,3 +13,11 @@ export type AccessTokenClaims = Readonly<{
 export interface AccessTokenSigner {
   issue(claims: AccessTokenClaims): Promise<Readonly<{ accessToken: string; expiresIn: number }>>;
 }
+
+export type JsonWebKeySet = Readonly<{
+  keys: readonly Readonly<Record<string, string>>[];
+}>;
+
+export interface AccessTokenJwksProvider {
+  jwks(): Promise<JsonWebKeySet>;
+}

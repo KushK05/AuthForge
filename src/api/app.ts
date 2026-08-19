@@ -43,6 +43,7 @@ import {
 } from "../modules/identity/application/confirm-email-verification.js";
 import { hashSignUpRequest, signUp, type SignUpRepository } from "../modules/identity/application/sign-up.js";
 import type { IdentityUserReader } from "../modules/identity/application/user-reader.js";
+import type { AccessTokenJwksProvider } from "../modules/sessions/application/access-token-signer.js";
 import type { SecretApiKeyReader } from "../modules/developer-platform/application/authenticate-secret-key.js";
 import type { AppConfig } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
@@ -75,6 +76,10 @@ export type AuthorizationDependencies = Readonly<{
   userRoleAssignmentRepository?: UserRoleAssignmentRepository;
 }>;
 
+export type SessionDependencies = Readonly<{
+  accessTokenJwksProvider: AccessTokenJwksProvider;
+}>;
+
 const createProjectBodySchema = z.object({ name: z.string() }).strict();
 const createApiKeyBodySchema = z.object({
   kind: z.enum(["secret", "publishable"]),
@@ -101,7 +106,8 @@ export const buildApi = (
   logger = new Logger(config.logLevel, config.environment),
   developerPlatform?: DeveloperPlatformDependencies,
   identity?: IdentityDependencies,
-  authorization?: AuthorizationDependencies
+  authorization?: AuthorizationDependencies,
+  sessions?: SessionDependencies
 ): FastifyInstance => {
   const api = Fastify({ logger: false });
 
@@ -148,6 +154,14 @@ export const buildApi = (
 
   api.get("/healthz", async () => ({ status: "ok" }));
   api.get("/readyz", async () => ({ status: "ok" }));
+
+  api.get("/v1/projects/:projectId/.well-known/jwks.json", async (request, reply) => {
+    if (!sessions) throw unavailableDependency();
+    const params = z.object({ projectId: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) throw invalidRequest("Invalid JWKS project request");
+    reply.header("Cache-Control", "public, max-age=300");
+    return sessions.accessTokenJwksProvider.jwks();
+  });
 
   api.post("/v1/sign-ups", async (request, reply) => {
     const authorization = request.headers.authorization;
