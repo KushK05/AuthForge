@@ -1,6 +1,6 @@
 # AuthForge agent instructions
 
-These files are the authoritative project directions. Read `README.md`, `ARCHITECTURE.md`, `API_CONTRACTS.md`, `DATA_MODEL.md`, `SECURITY.md`, and the relevant sections of `AWS_DEPLOYMENT.md` before changing behavior. When documents conflict, resolve in this order: `SECURITY.md`, `API_CONTRACTS.md`, `DATA_MODEL.md`, `ARCHITECTURE.md`, then the remaining documents. Raise the conflict instead of guessing.
+These files are the authoritative project directions. Read `README.md`, `docs/ARCHITECTURE.md`, `docs/API_CONTRACTS.md`, `docs/DATA_MODEL.md`, `docs/SECURITY.md`, and the relevant sections of `docs/AWS_DEPLOYMENT.md` before changing behavior. When documents conflict, resolve in this order: `docs/SECURITY.md`, `docs/API_CONTRACTS.md`, `docs/DATA_MODEL.md`, `docs/ARCHITECTURE.md`, then the remaining documents. Raise the conflict instead of guessing.
 
 ## Non-negotiable v1 architecture
 
@@ -16,7 +16,7 @@ These files are the authoritative project directions. Read `README.md`, `ARCHITE
 1. State which documented invariant or contract the change affects.
 2. Make the narrowest change that meets the request. Do not add a framework, service, queue, database, cache, or cloud product without a concrete need.
 3. Update the affected Markdown contract in the same change when behavior, schema, interface, architecture, deployment, or security posture changes.
-4. Add a dated record to `DECISIONS.md` before changing a foundational decision: module topology, consistency model, token strategy, storage technology, AWS boundary, or public API version.
+4. Add a dated record to `docs/DECISIONS.md` before changing a foundational decision: module topology, consistency model, token strategy, storage technology, AWS boundary, or public API version.
 5. Do not silently convert the modular monolith into microservices. Propose the split with workload evidence, ownership, data-migration plan, observability plan, rollback plan, and an approved decision record.
 
 ## Implementation rules
@@ -25,14 +25,14 @@ These files are the authoritative project directions. Read `README.md`, `ARCHITE
 - Every tenant-owned database query must include `project_id` or an equivalent tenant predicate. Add tests that prove cross-project data is unavailable.
 - Hash passwords with Argon2id using centrally configured parameters. Hash opaque tokens and secret API keys before persistence. Store only a display prefix for keys.
 - Access JWTs are short-lived and signed with an asymmetric KMS-backed key. Refresh tokens are opaque, single-use, rotated on each exchange, and revoked on replay.
-- Validate untrusted input at the HTTP boundary. Use a stable problem-details error shape from `API_CONTRACTS.md`; never leak database errors.
+- Validate untrusted input at the HTTP boundary. Use a stable problem-details error shape from `docs/API_CONTRACTS.md`; never leak database errors.
 - Require idempotency keys for externally retried create and state-transition requests. Persist the result for the documented retention period.
 - Do not access another module's tables directly. Go through its application service or published repository interface.
 - Database migrations must be forward-only, reviewable, and compatible with a rolling deployment. Never alter production data with an unreviewed ad hoc script.
 
 ## Required verification
 
-Run the smallest relevant unit and integration tests while working, then the affected end-to-end journeys before calling a change complete. For any public HTTP, migration, queue-handler, token, authorization, or infrastructure change, also run the security and contract tests specified in `TESTING.md`. Inspect CI failures rather than bypassing them.
+Run the smallest relevant unit and integration tests while working, then the affected end-to-end journeys before calling a change complete. For any public HTTP, migration, queue-handler, token, authorization, or infrastructure change, also run the security and contract tests specified in `docs/TESTING.md`. Inspect CI failures rather than bypassing them.
 
 ## When to stop and ask
 

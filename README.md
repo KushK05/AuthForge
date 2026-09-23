@@ -9,15 +9,15 @@ The initial production architecture is a modular monolith API plus event-driven 
 | File | Authority |
 | --- | --- |
 | [AGENTS.md](AGENTS.md) | Mandatory operating rules for coding agents and contributors. |
-| [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) | Product scope, request flows, capacity assumptions, failure modes, and non-functional requirements. |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Module boundaries, dependency rules, runtime topology, and architecture decision records. |
-| [API_CONTRACTS.md](API_CONTRACTS.md) | Versioned HTTP contract, error model, auth schemes, and idempotency requirements. |
-| [DATA_MODEL.md](DATA_MODEL.md) | PostgreSQL ownership model, tables, constraints, and migration rules. |
-| [SECURITY.md](SECURITY.md) | Threat model, token, credential, tenancy, privacy, and operational-security requirements. |
-| [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md) | AWS topology, infrastructure as code, environments, deployment pipeline, observability, and scale path. |
-| [ROADMAP.md](ROADMAP.md) | Ordered implementation and scaling milestones with exit criteria. |
-| [TESTING.md](TESTING.md) | Test pyramid, mandatory end-to-end journeys, fixtures, and release gates. |
-| [DECISIONS.md](DECISIONS.md) | Decision records. Amend this file before intentionally changing a foundational choice. |
+| [SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md) | Product scope, request flows, capacity assumptions, failure modes, and non-functional requirements. |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module boundaries, dependency rules, runtime topology, and architecture decision records. |
+| [API_CONTRACTS.md](docs/API_CONTRACTS.md) | Versioned HTTP contract, error model, auth schemes, and idempotency requirements. |
+| [DATA_MODEL.md](docs/DATA_MODEL.md) | PostgreSQL ownership model, tables, constraints, and migration rules. |
+| [SECURITY.md](docs/SECURITY.md) | Threat model, token, credential, tenancy, privacy, and operational-security requirements. |
+| [AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md) | AWS topology, infrastructure as code, environments, deployment pipeline, observability, and scale path. |
+| [ROADMAP.md](docs/ROADMAP.md) | Ordered implementation and scaling milestones with exit criteria. |
+| [TESTING.md](docs/TESTING.md) | Test pyramid, mandatory end-to-end journeys, fixtures, and release gates. |
+| [DECISIONS.md](docs/DECISIONS.md) | Decision records. Amend this file before intentionally changing a foundational choice. |
 
 ## v1 capabilities
 
@@ -45,4 +45,4 @@ The initial production architecture is a modular monolith API plus event-driven 
 
 After copying `.env.example` to `.env`, set a unique `API_KEY_HASH_KEY` with at least 32 characters. Once the dependencies have started and migrations have run, execute `npm run seed:development` exactly once to create the local bootstrap project and reveal its initial secret key. This command refuses non-development environments and never re-reveals a prior bootstrap key.
 
-Implementation order, environment variables, and verification gates are specified in [ROADMAP.md](ROADMAP.md), [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md), and [TESTING.md](TESTING.md).
+Implementation order, environment variables, and verification gates are specified in [ROADMAP.md](docs/ROADMAP.md), [AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md), and [TESTING.md](docs/TESTING.md).
