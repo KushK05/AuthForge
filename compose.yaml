@@ -46,6 +46,10 @@ services:
     environment:
       DATABASE_URL: postgres://authforge:authforge@postgres:5432/authforge
       REDIS_URL: redis://redis:6379
+      CONSOLE_ACCESS_CODE: ${CONSOLE_ACCESS_CODE:-local-showcase-console-access-code}
+      CREDENTIAL_HASH_KEY: ${CREDENTIAL_HASH_KEY:-local-showcase-credential-hash-key-32}
+      CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://localhost:8080}
+      SECURE_COOKIES: "false"
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,6 +65,10 @@ services:
       HOST: 0.0.0.0
       DATABASE_URL: postgres://authforge:authforge@postgres:5432/authforge
       REDIS_URL: redis://redis:6379
+      CONSOLE_ACCESS_CODE: ${CONSOLE_ACCESS_CODE:-local-showcase-console-access-code}
+      CREDENTIAL_HASH_KEY: ${CREDENTIAL_HASH_KEY:-local-showcase-credential-hash-key-32}
+      CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://localhost:8080}
+      SECURE_COOKIES: "false"
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,6 +87,10 @@ services:
     environment:
       DATABASE_URL: postgres://authforge:authforge@postgres:5432/authforge
       REDIS_URL: redis://redis:6379
+      CONSOLE_ACCESS_CODE: ${CONSOLE_ACCESS_CODE:-local-showcase-console-access-code}
+      CREDENTIAL_HASH_KEY: ${CREDENTIAL_HASH_KEY:-local-showcase-credential-hash-key-32}
+      CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://localhost:8080}
+      SECURE_COOKIES: "false"
     depends_on:
       postgres:
         condition: service_healthy

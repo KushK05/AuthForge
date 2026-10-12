@@ -1,70 +1,95 @@
-# AWS deployment and scale-as-we-go plan
+# Temporary AWS deployment
 
-## Baseline AWS topology
+## Deployment goal
 
-Use infrastructure as code, preferably Terraform or AWS CDK, with reusable modules and one reviewed environment root per stage. Do not create resources manually except a documented emergency operation that is immediately reconciled into IaC.
+Provision the complete AWS evaluation stack, demonstrate it with synthetic data, and destroy it after the showcase. This is one temporary environment, not a development, staging, and production platform.
+
+## Required topology
 
 ```text
-Internet -> Route 53 -> CloudFront (optional later) -> ALB + AWS WAF
-                                                    -> ECS Fargate API
-Private subnets: ECS Fargate worker, RDS PostgreSQL Multi-AZ, ElastiCache Redis
-API/worker -> SQS + DLQ -> SES
-API/worker -> Secrets Manager, KMS, CloudWatch, S3 audit archive
-CI/CD -> ECR -> ECS deployment
+Route 53 -> CloudFront + ACM -> ALB + WAF -> ECS Fargate API
+                                                |
+                                  RDS PostgreSQL + ElastiCache Redis
+                                                |
+                                           outbox rows
+                                                v
+                                         SQS queue + DLQ
+                                                |
+                                       ECS Fargate worker
+                                          /          \
+                                  SES sandbox        S3
+
+ECR stores the image. KMS, Secrets Manager, CloudWatch, IAM, and Terraform
+support and secure the environment.
 ```
 
-Initial production deploys API and worker to ECS Fargate across at least two Availability Zones. RDS PostgreSQL uses Multi-AZ when production availability targets begin. Redis uses a managed ElastiCache deployment with TLS in production. An Application Load Balancer terminates TLS with ACM certificates. AWS WAF attaches to the ALB with managed common, known-bad-input, and rate-based rules. All service access uses IAM task roles.
+## AWS service evidence
 
-## Environment stages
+| Service | Minimal showcase purpose |
+| --- | --- |
+| Route 53 | Temporary DNS record for the showcase hostname. |
+| CloudFront | HTTPS edge with cache disabled for `/v1/*` and only static-console assets eligible for short caching. |
+| ACM | TLS certificate for the showcase hostname. |
+| ALB | Routes health and application traffic to the API task. |
+| AWS WAF | Managed common and known-bad-input protections plus a small rate rule. |
+| ECS Fargate | One API task and one worker task from the same image. |
+| ECR | Stores the immutable showcase image. |
+| RDS PostgreSQL | Temporary authoritative console, key, session, outbox, and inbox records. |
+| ElastiCache Redis | Login limits and short-lived credential cache or revocation hints. |
+| SQS and DLQ | Synthetic lifecycle-event delivery, retry, and visible failure handling. |
+| SES | Sandbox or mailbox-simulator call with fixed synthetic content. |
+| S3 | Redacted synthetic event artifacts with short lifecycle policy. |
+| KMS | Encryption for supported data services, secrets, queues, buckets, and logs. |
+| Secrets Manager | Console access code, credential digest key, and database credentials. |
+| CloudWatch | Logs, metrics, dashboard, and alarms for the demonstration. |
+| IAM | Separate least-privilege API, worker, deployment, and CI roles. |
+| Terraform | Creates, documents, and destroys the complete stack. |
 
-| Stage | Purpose | Required posture |
-| --- | --- | --- |
-| Local | Fast feedback | Compose services, local email sink, no real AWS credentials or recipient email. |
-| Development | Shared integration | Small managed resources, isolated data, no production PII, automatic deploy from main after checks. |
-| Staging | Release verification | Production-like topology and migrations, seeded synthetic load, manual production promotion gate. |
-| Production | User-facing | Isolated account or strongly isolated environment, encrypted backups, alarms, least privilege, rollback-ready release. |
+Do not substitute, omit, or add services without an approved scope decision.
 
-## Infrastructure modules
+## Cost and retention posture
 
-Create modules for networking, IAM, ECR, ECS service, RDS, Redis, queue/DLQ, email identity/configuration, KMS, secrets, observability, S3 archive, WAF/ALB, and CI federation. Inputs are typed and explicitly named. Outputs are non-secret identifiers and endpoints. Apply least privilege per component: API does not receive SES-send permission if the worker is the sole sender; worker does not receive public ingress; archival job does not receive RDS mutation rights.
+- Use one smallest practical API task and one smallest practical worker task.
+- Use single-AZ, smallest practical RDS and Redis configurations accepted by the evaluation.
+- Disable RDS deletion protection, automated backups, and final snapshots.
+- Keep CloudWatch and S3 retention at the shortest evaluation-compatible duration.
+- Keep SES in sandbox. Never use a real recipient.
+- Do not create standby capacity, read replicas, autoscaling above one task, NAT capacity beyond the minimum design, or multi-region resources.
+- Set an explicit teardown time and owner before apply.
 
-## CI/CD flow
+## Network and access
 
-1. Pull requests run formatting, static analysis, unit tests, integration tests, contract tests, migration validation, dependency and secret scans, and IaC validation/plan.
-2. Merges build an immutable container image tagged with commit SHA, create a software bill of materials, scan it, and push it to ECR.
-3. Development deploys the exact image through IaC-aware pipeline steps. Staging promotion runs migrations, deploys API then worker, executes smoke and end-to-end tests, and monitors alarms.
-4. Production promotion uses the same image digest, an approved change, and rolling or blue/green deployment. Roll back application image when safe; use expand-migrate-contract for schema changes so rollback remains possible.
+CloudFront is the public entry point. The ALB accepts traffic only from the intended edge path where practical. API and worker tasks, RDS, and Redis run in private subnets. RDS and Redis have no public endpoint access.
 
-Never apply a destructive infrastructure change automatically. IaC plans that replace databases, queues, encryption keys, or network foundations require human review.
+Use VPC endpoints when they reduce required public egress for ECR, S3, SQS, Secrets Manager, KMS, and CloudWatch. If the minimal environment uses a NAT gateway, document its cost and delete it during teardown.
 
-## Operations and alarms
+## Deployment flow
 
-CloudWatch dashboards show ALB request/error/latency, API saturation, ECS restarts, RDS CPU/connections/storage/replica lag, Redis memory/evictions, SQS visible messages/age, DLQ depth, SES rejections, authentication outcome rates, and refresh replay rate. Alarm immediately for 5xx surge, DLQ messages, queue age above five minutes, RDS storage danger, repeated deployment failures, unusual API-key failures, and refresh-token replay spikes. Route production alarms to an owned notification channel with runbooks.
+1. Run formatting, type checks, tests, Terraform validation, and a reviewed plan.
+2. Build one immutable image and push it to ECR with the commit SHA tag.
+3. Apply Terraform for the single showcase environment.
+4. Run forward-only migrations against the empty temporary RDS database.
+5. Start one API task and one worker task.
+6. Verify Route 53, CloudFront, ACM, ALB, WAF, health checks, private data services, and task roles.
+7. Run the remote journey in `TESTING.md` using only synthetic data.
+8. Rehearse the exact demonstration and controlled DLQ failure.
+9. Present the showcase.
+10. Run teardown verification, then destroy the stack.
 
-Back up RDS automatically with point-in-time recovery. Periodically restore into an isolated environment and validate an authentication smoke journey. Version and encrypt S3 audit exports; lifecycle them to lower-cost storage after the retention window. Do not rely on logs as a backup strategy.
+## Required configuration
 
-## Scaling roadmap
+Application settings include `NODE_ENV`, `HOST`, `PORT`, `LOG_LEVEL`, `CONSOLE_ORIGIN`, `DEFAULT_SESSION_TTL_SECONDS`, `MAX_SESSION_TTL_SECONDS`, `MAX_SUBJECT_LENGTH`, `MAX_REQUEST_BODY_BYTES`, `MAX_API_KEYS`, `MAX_SESSIONS`, `MAX_CONSOLE_SESSIONS`, `MAX_FAILED_CONSOLE_ATTEMPTS`, and `CONSOLE_ATTEMPT_WINDOW_SECONDS`.
 
-### Phase 0 - local and development
+AWS resource identifiers and secret ARNs come from Terraform outputs or ECS task configuration. Secret values remain in Secrets Manager and are never Terraform outputs.
 
-One API, one worker, local PostgreSQL and Redis. Validate all required flows. Use a managed development database before multiple developers share data. Do not introduce Kubernetes, service mesh, or sharded databases.
+## Teardown flow
 
-### Phase 1 - initial production
+1. Stop writes and run the final synthetic-data check.
+2. Empty the dedicated S3 bucket through the reviewed Terraform teardown mechanism.
+3. Run `terraform plan -destroy` and review every target.
+4. Run `terraform destroy`.
+5. Verify the resources listed in `TESTING.md` are absent and no final RDS snapshot exists.
+6. Remove the AuthForge ECR image, temporary Route 53 record, and KMS alias or project key through their documented deletion processes. Never delete a shared hosted zone.
+7. Record that no real data was used and no AuthForge application data was retained.
 
-ECS Fargate API with minimum two tasks across AZs, one or more worker tasks autoscaled on SQS depth, RDS PostgreSQL, managed Redis, SQS/DLQ, SES, WAF, CloudWatch, KMS, Secrets Manager, ECR, and IaC. Size conservatively from observed load and perform a restore test before launch.
-
-### Phase 2 - measured growth
-
-Trigger when p95 latency, RDS utilization, queue age, or availability objectives are breached for sustained periods. First tune indexes and queries, add connection pooling, add ECS autoscaling, separate read-only audit/export workload, scale workers by queue depth, and deploy RDS read replicas only for verified read pressure. Use Redis only for cache/rate limits, never as durable session source.
-
-### Phase 3 - regional resilience
-
-Trigger when contractual availability, recovery, or geographic latency requires it. Add tested cross-region backup/restore or read-replica strategy, DNS failover plan, regional deployment runbooks, and an explicit consistency decision. Do not claim active-active authentication until token keys, session revocation, tenant routing, and data conflict behavior have been designed and exercised.
-
-### Phase 4 - selective extraction
-
-Only after satisfying `ARCHITECTURE.md` extraction criteria, split the notification worker or audit archival pipeline. Maintain event versioning, replay tooling, dashboards, and ownership. Keep identity/session state close to its transaction boundary unless a substantially stronger case exists.
-
-## Deployment checklist
-
-Before each production release: approved IaC plan, migrated staging database, passing full test suite, confirmed alert routing, zero unexpected DLQ depth, image digest recorded, secrets available by ARN, backup health confirmed, rollback path documented, and no unresolved security finding at release severity.
+Manual console-created resources are prohibited because they are easy to miss during teardown.

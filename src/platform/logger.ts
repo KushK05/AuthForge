@@ -17,7 +17,10 @@ const blockedKeys = new Set([
   "password",
   "refresh_token",
   "token",
-  "api_key"
+  "api_key",
+  "access_code",
+  "csrf_token",
+  "subject"
 ]);
 
 const redact = (fields: LogFields): LogFields =>

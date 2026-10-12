@@ -2,65 +2,84 @@
 
 ## Conventions
 
-Base path is `/v1`. JSON uses `application/json`, timestamps are ISO-8601 UTC, IDs are opaque UUID-like strings, and pagination is cursor based. Every response includes `X-Request-Id`; clients may supply one that passes validation. Documented endpoints must have an OpenAPI specification generated from or checked against these contracts.
+The base path is `/v1`. JSON uses `application/json`, timestamps use ISO-8601 UTC, and IDs are opaque strings. Every response includes `X-Request-Id`. Responses containing raw secrets include `Cache-Control: no-store`.
 
-Authentication schemes:
+There are three credentials:
 
-- `Publishable key`: `Authorization: Bearer pk_<value>`. Identifies a project for public end-user flows. It is not privileged.
-- `Secret API key`: `Authorization: Bearer sk_<value>`. Server-to-server management only. Requires key scopes.
-- `User access JWT`: `Authorization: Bearer <jwt>`. Used for an authenticated end user in a project.
-- `Developer session`: a separate, secure, HTTP-only browser session for console routes. Never accept it for end-user project APIs.
+- Console access code: stored in Secrets Manager and exchanged for a short-lived, HTTP-only console cookie.
+- Secret API key: `Authorization: Bearer sk_<value>` for session-management endpoints.
+- Session token: an opaque value returned once when a session is created and passed to the validation endpoint body.
 
-All state-changing `POST`, `PUT`, `PATCH`, and `DELETE` endpoints accept `Idempotency-Key` unless explicitly exempted. The key is unique within authenticated principal, route, and project for 24 hours. Reuse with a different request hash returns `409 idempotency_key_reused`. Token-consumption confirmations are exempt because their opaque, single-use token provides replay protection.
+The prototype does not issue JWTs, refresh tokens, publishable keys, or user credentials.
 
 ## Error model
 
-Errors use RFC 9457 problem details:
+Errors use this stable shape:
 
 ```json
 {
-  "type": "https://authforge.example/problems/invalid-credentials",
-  "title": "Authentication failed",
-  "status": 401,
-  "code": "invalid_credentials",
-  "request_id": "req_..."
+  "error": {
+    "code": "invalid_api_key",
+    "message": "The supplied API key is invalid.",
+    "request_id": "req_123"
+  }
 }
 ```
 
-Use `400` invalid request, `401` invalid or expired credentials, `403` authenticated but forbidden, `404` undiscoverable resources, `409` conflicting state, `422` valid syntax but rejected policy, `429` rate-limited, and `503` unavailable dependency. Sign-in and reset requests must not disclose whether an email exists.
+Use `400` for invalid input, `401` for invalid or expired credentials, `403` for failed console origin or CSRF checks, `404` for unknown or undiscoverable resources, `409` for conflicting state, `429` for rate or showcase-capacity limits, and `503` for unavailable required dependencies. Do not expose stack traces, SQL, or AWS errors.
 
-## End-user auth endpoints
+## Health endpoints
 
 | Method and path | Auth | Contract |
 | --- | --- | --- |
-| `POST /v1/sign-ups` | publishable key | `{email,password,redirect_url?}`. Creates a pending user and queues verification. `redirect_url`, when supplied, must exactly match the project's normalized allowlist. Returns `202` with `{status:"pending_verification"}` regardless of whether the email was already registered. |
-| `POST /v1/email-verifications/confirm` | token | `{token}`. Single-use confirmation. Returns `{id,status:"active",emailVerifiedAt}`. |
-| `POST /v1/sign-ins` | publishable key | `{email,password}`. Returns `access_token`, `refresh_token`, `expires_in`, and user summary. Generic `401` on failure. |
-| `POST /v1/token` | refresh token | `{refresh_token}`. Atomically rotates refresh token. Returns a new token pair. |
-| `POST /v1/sign-outs` | access JWT | Revokes current session. `204` is idempotent. |
-| `POST /v1/password-resets` | publishable key | `{email,redirect_url?}`. Always returns `202`; queues email when eligible. |
-| `POST /v1/password-resets/confirm` | token | `{token,new_password}`. Consumes token and revokes all sessions. |
-| `GET /v1/me` | access JWT | Returns caller's project-scoped profile, roles, and session summary. |
+| `GET /health/live` | none | Returns `200` while the process event loop can serve requests. |
+| `GET /health/ready` | none | Returns `200` only when required PostgreSQL, Redis, and AWS configuration checks pass. It does not execute SES delivery. |
 
-Refresh tokens are sent only in an HTTP-only Secure SameSite cookie for browser flows, or in the JSON request body for explicitly enabled native-client flows. Never accept them in a query parameter. Responses with token material have `Cache-Control: no-store`.
+## Console protection
 
-## Developer management endpoints
+Successful console login sets an `HttpOnly`, `Secure` outside local development, `SameSite=Strict` cookie and returns a random `csrf_token` in the JSON body. The server stores only its digest with the console session.
 
-| Method and path | Required scope | Contract |
+Every cookie-authenticated `POST`, `PUT`, `PATCH`, or `DELETE` request must:
+
+- Send the token in `X-CSRF-Token`.
+- Send an `Origin` header exactly matching a configured console origin.
+
+Missing or invalid proof returns `403 invalid_csrf`. `GET` routes still enforce the configured origin when called from a browser.
+
+## Console endpoints
+
+| Method and path | Auth | Contract |
 | --- | --- | --- |
-| `POST /v1/developer/projects` | `projects:write` | `{name}`. Creates a project and its default development environment. Returns `201` with the project and environment summary; an idempotent replay returns the same summary with `200`. |
-| `GET /v1/developer/projects` | `projects:read` | Cursor-paginated `{data,next_cursor}` list containing only projects within the developer organization. |
-| `POST /v1/developer/projects/{project_id}/keys` | `keys:write` | `{kind,scopes}`. Creates a scoped secret key or an unscoped publishable key for a project in the caller's organization. The raw key is returned only in the initial `201` response and is omitted from an idempotent replay (`200`). |
-| `DELETE /v1/developer/projects/{project_id}/keys/{key_id}` | `keys:write` | Revokes a key immediately and returns `204`; an idempotent replay also returns `204`. |
-| `PUT /v1/developer/projects/{project_id}/redirect-urls` | `projects:write` | `{urls}`. Replaces the validated, exact normalized redirect allowlist and returns `{urls}`. HTTPS is required, except HTTP loopback URLs in development. |
-| `POST /v1/developer/projects/{project_id}/roles` | `roles:write` | `{name,description?,permissions}`. Creates a role in the authenticated project from known permissions. Returns `201` with `{id,name,description?,permissions}`; an idempotent replay returns `200`. |
-| `PUT /v1/developer/projects/{project_id}/users/{user_id}/roles` | `roles:write` | `{role_ids}`. Replaces the user's project-scoped role assignment set and returns `{role_ids}`. |
-| `GET /v1/developer/projects/{project_id}/audit-events` | `audit:read` | Cursor-paginated, redacted audit view. |
+| `POST /v1/console/session` | none | `{access_code}`. Creates a short-lived console session and returns `{csrf_token}` with `Cache-Control: no-store`. Repeated failures use Redis-backed rate limits and the same `401 invalid_console_access` response. |
+| `DELETE /v1/console/session` | console cookie + CSRF | Revokes the current console session, clears the cookie, and returns `204`. |
+| `GET /v1/console/state` | console cookie | Returns API-key summaries, session summaries, and redacted showcase-event status needed by the dashboard. |
+| `DELETE /v1/console/sessions/{session_id}` | console cookie + CSRF | Revokes any application session selected in the console and returns `204`; repeated revocation also returns `204`. |
 
-## JWT contract
+## API-key endpoints
 
-Access JWTs use `PS256`, are signed by a KMS `SIGN_VERIFY` RSA key, and include `iss`, `aud`, `sub`, `exp`, `iat`, `jti`, `sid`, `project_id`, `token_version`, `roles`, and `scope` as applicable. `aud` is the project environment identifier. Default lifetime is 15 minutes. Publish a project-scoped JWKS endpoint at `GET /v1/projects/{project_id}/.well-known/jwks.json` with cache headers and key ID rotation overlap. Consumers must verify signature, issuer, audience, expiration, not-before when present, and project context.
+| Method and path | Auth | Contract |
+| --- | --- | --- |
+| `POST /v1/api-keys` | console cookie + CSRF | `{name}`. Creates a key and returns `201` with `{id,name,prefix,secret,created_at}`. `secret` appears only in this response. |
+| `GET /v1/api-keys` | console cookie | Returns `{data:[...]}` with `id`, `name`, `prefix`, `created_at`, and `revoked_at`. |
+| `DELETE /v1/api-keys/{key_id}` | console cookie + CSRF | Revokes the key and all sessions created by it in one transaction. Returns `204`, including repeated revocation. |
+
+API keys have no scopes, project association, environment association, or user permissions.
+
+## Session endpoints
+
+| Method and path | Auth | Contract |
+| --- | --- | --- |
+| `POST /v1/sessions` | secret API key | `{subject,ttl_seconds?}`. Creates a session for a synthetic subject. Returns `201` with `{id,subject,token,created_at,expires_at}`. `token` appears only in this response. |
+| `POST /v1/sessions/validate` | secret API key | `{token}`. Returns `200` with `{valid:true,session:{id,subject,created_at,expires_at}}` for an active session owned by the key. Invalid, expired, revoked, or differently owned tokens return `401 invalid_session`. |
+| `GET /v1/sessions` | secret API key | Returns `{data:[...]}` for sessions created by that API key. Raw tokens and digests are omitted. |
+| `DELETE /v1/sessions/{session_id}` | secret API key | Revokes a session owned by the key. Returns `204`; repeated revoke also returns `204`. Another key's session is undiscoverable and returns `404`. |
+
+`subject` is an opaque synthetic label, not a managed user identity. It must be short, non-empty, and free of sensitive data. Default and maximum TTL values come from validated configuration.
+
+## Event contract
+
+Every API-key or session mutation appends a versioned outbox event in the same PostgreSQL transaction. SQS payloads contain only redacted identifiers and correlation data defined in `ARCHITECTURE.md`. Event delivery is asynchronous and does not change the HTTP response body.
 
 ## Compatibility policy
 
-Add fields and endpoints freely. Do not remove, rename, narrow semantics, or change error codes within `/v1`. Deprecate with documentation and response headers, then introduce `/v2` only after a migration window. Keep an executable contract test suite for all published behavior.
+The `/v1` contract is stable for the showcase implementation and tests, but there is no long-term support commitment. An incompatible change must update this document and its contract tests in the same change.

@@ -2,6 +2,10 @@
 
 This is an append-only log. Status values: `accepted`, `superseded`, `proposed`, or `rejected`. A superseding record must link to the decision it replaces.
 
+## Active decision
+
+ADR-009 is the active project scope. It narrows the product while preserving the AWS services selected in earlier records as evaluation requirements. Earlier records remain historical context where ADR-009 changes their product or retention assumptions.
+
 ## ADR-001: Modular monolith with event-driven worker
 
 - Status: accepted
@@ -69,6 +73,18 @@ This is an append-only log. Status values: `accepted`, `superseded`, `proposed`,
 - Consequences: The API role needs only `kms:Sign` and `kms:GetPublicKey`; private keys remain in KMS. Verifiers can cache the public JWKS for the response lifetime. KMS signing availability is required to complete a sign-in.
 - Migration and rollback: No production access tokens are issued yet. Future rotations publish old and new key IDs during the maximum access-token lifetime before removing the old key.
 - Verification: Unit tests verify the returned JWT signature with the generated public key, and contract tests verify the JWKS response and cache header.
+
+## ADR-009: Replace the production product with a temporary AWS showcase
+
+- Status: accepted
+- Date: 2026-10-05
+- Relationship: Supersedes the product scope, user-management, token, and long-term retention assumptions in ADR-001 through ADR-008. Retains TypeScript, Fastify, Vitest, the API and worker topology, and the AWS service set from ADR-004 and ADR-005 because those services are part of the evaluation.
+- Context: The production-oriented authentication platform is too large and expensive for the project's current purpose. The project now needs a temporary demonstration of a developer console, API keys, session management, and the previously selected AWS services. It will be deployed briefly, evaluated, and terminated. No real data may be used or retained.
+- Decision: Keep one API and one worker from the same codebase. Persist only synthetic console, API-key, session, outbox, and worker-deduplication records in temporary RDS. Use Redis, SQS/DLQ, SES sandbox, S3, KMS, Secrets Manager, CloudWatch, ECR, ECS Fargate, WAF, ALB, CloudFront, Route 53, ACM, IAM, and Terraform in the minimal roles defined by `AWS_DEPLOYMENT.md`. Destroy all resources and data after evaluation. Do not implement users, passwords, email lifecycle, RBAC, multi-tenancy, JWT/JWKS, refresh-token families, billing, or production operations.
+- Alternatives: Keeping the complete production feature set was rejected because it does not fit the new scope or cost boundary. Removing the AWS data and messaging services was rejected because those services are evaluation criteria. A static UI mock was rejected because evaluators need real API-key, session, queue, worker, and teardown behavior.
+- Consequences: Product code and data remain small, while infrastructure still spans the required AWS services. Synthetic state can survive task restarts during the showcase but is permanently deleted with the stack. The service cannot support real users and must never be represented as production-ready.
+- Migration and rollback: There is no production data to migrate. Existing source and infrastructure may be simplified to the new tables, modules, and smallest AWS configurations. Rollback during development may destroy and recreate the temporary environment. Returning to a real identity platform requires a new decision record and new security, data, migration, and operations designs.
+- Verification: Contract tests cover the endpoints in `API_CONTRACTS.md`. End-to-end tests prove console access, CSRF, key lifecycle, session lifecycle, ownership, expiry, revocation, outbox and SQS handling, SES sandbox, S3 redaction, CloudWatch evidence, DLQ behavior, and complete Terraform teardown without retained AuthForge data.
 
 ## ADR template
 

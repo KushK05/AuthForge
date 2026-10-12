@@ -1,39 +1,55 @@
 # AuthForge agent instructions
 
-These files are the authoritative project directions. Read `README.md`, `docs/ARCHITECTURE.md`, `docs/API_CONTRACTS.md`, `docs/DATA_MODEL.md`, `docs/SECURITY.md`, and the relevant sections of `docs/AWS_DEPLOYMENT.md` before changing behavior. When documents conflict, resolve in this order: `docs/SECURITY.md`, `docs/API_CONTRACTS.md`, `docs/DATA_MODEL.md`, `docs/ARCHITECTURE.md`, then the remaining documents. Raise the conflict instead of guessing.
+AuthForge is a temporary AWS authentication showcase, not a production identity service. Read `README.md`, `docs/ARCHITECTURE.md`, `docs/API_CONTRACTS.md`, `docs/DATA_MODEL.md`, `docs/SECURITY.md`, and `docs/AWS_DEPLOYMENT.md` before changing behavior.
 
-## Non-negotiable v1 architecture
+When documents conflict, resolve them in this order: `docs/SECURITY.md`, `docs/API_CONTRACTS.md`, `docs/DATA_MODEL.md`, `docs/ARCHITECTURE.md`, then the remaining documents. Raise unresolved conflicts instead of guessing.
 
-- Build one deployable API and one deployable worker from the same codebase. The worker consumes queues and never serves public HTTP.
-- Preserve modules: `identity`, `sessions`, `authorization`, `developer-platform`, `notifications`, `audit`, and `shared`. Modules expose application services and interfaces, not database internals.
-- PostgreSQL is authoritative for durable data. Redis is disposable and may hold only rate-limit counters, short-lived caches, and revocation hints that fail safely.
-- SQS transports durable asynchronous commands. Handlers must be idempotent. Every queue has a dead-letter queue.
-- Use synchronous transactions for state changes and an outbox record in that same transaction. A worker publishes outbox records after commit.
-- Never place passwords, refresh tokens, API keys, raw JWTs, email-reset tokens, or unredacted PII in logs, metrics, traces, SQS payloads, or audit metadata.
+## Non-negotiable product scope
+
+- Support only a developer console, API-key lifecycle, and application-session lifecycle.
+- Use one deployment-scoped console operator. Do not build developer accounts or organization management.
+- Sessions use synthetic subject identifiers supplied by the demo client. Do not create a user domain.
+- Do not add registration, passwords, email verification, password reset, profiles, roles, permissions, social login, MFA, billing, or long-lived user identity.
+- Never use real personal, customer, or business data.
+
+## Non-negotiable AWS evaluation architecture
+
+- Build one API and one worker from the same TypeScript and Fastify codebase.
+- Deploy the API and worker on ECS Fargate from images in ECR.
+- Route public traffic through Route 53, CloudFront, ACM, an Application Load Balancer, and AWS WAF.
+- Use RDS PostgreSQL for temporary authoritative API-key and session records.
+- Use ElastiCache Redis only for rate limits, short-lived validation cache, and revocation hints.
+- Use SQS with a DLQ for synthetic lifecycle events. The worker writes redacted event artifacts to S3 and exercises SES only in sandbox or simulator mode.
+- Use KMS, Secrets Manager, CloudWatch, IAM, and Terraform as specified in `docs/AWS_DEPLOYMENT.md`.
+- Destroy the entire environment after evaluation. Do not retain snapshots, backups, buckets, queues, logs, secrets, or databases.
+
+The AWS services are evaluation requirements. Do not remove them merely because the product functionality is small. Keep each integration minimal and directly visible in the showcase.
 
 ## Change discipline
 
-1. State which documented invariant or contract the change affects.
-2. Make the narrowest change that meets the request. Do not add a framework, service, queue, database, cache, or cloud product without a concrete need.
-3. Update the affected Markdown contract in the same change when behavior, schema, interface, architecture, deployment, or security posture changes.
-4. Add a dated record to `docs/DECISIONS.md` before changing a foundational decision: module topology, consistency model, token strategy, storage technology, AWS boundary, or public API version.
-5. Do not silently convert the modular monolith into microservices. Propose the split with workload evidence, ownership, data-migration plan, observability plan, rollback plan, and an approved decision record.
+1. State which documented product or AWS evaluation contract the change affects.
+2. Make the smallest coherent change that completes a console, API-key, session, event, or deployment journey.
+3. Update the affected Markdown contract when behavior, schema, interface, architecture, security posture, or deployment changes.
+4. Add a dated record to `docs/DECISIONS.md` before changing the AWS service set, adding real user management, retaining data after teardown, or creating another deployable service.
+5. Remove legacy feature complexity without removing required AWS evidence.
 
 ## Implementation rules
 
-- Derive tenant/project scope from trusted credentials or a verified JWT. Do not accept an arbitrary tenant identifier as sufficient authorization.
-- Every tenant-owned database query must include `project_id` or an equivalent tenant predicate. Add tests that prove cross-project data is unavailable.
-- Hash passwords with Argon2id using centrally configured parameters. Hash opaque tokens and secret API keys before persistence. Store only a display prefix for keys.
-- Access JWTs are short-lived and signed with an asymmetric KMS-backed key. Refresh tokens are opaque, single-use, rotated on each exchange, and revoked on replay.
-- Validate untrusted input at the HTTP boundary. Use a stable problem-details error shape from `docs/API_CONTRACTS.md`; never leak database errors.
-- Require idempotency keys for externally retried create and state-transition requests. Persist the result for the documented retention period.
-- Do not access another module's tables directly. Go through its application service or published repository interface.
-- Database migrations must be forward-only, reviewable, and compatible with a rolling deployment. Never alter production data with an unreviewed ad hoc script.
+- Generate API keys and session tokens with cryptographically secure randomness.
+- Store only keyed digests of raw API keys and session tokens. Return each raw secret only when created.
+- Never log access codes, authorization headers, cookies, raw API keys, raw session tokens, or secret-bearing request bodies.
+- Authenticate console routes with one deployment-scoped access code stored in Secrets Manager.
+- Require the CSRF token and trusted `Origin` checks defined in `docs/API_CONTRACTS.md` for console mutations.
+- Scope every application session to the API key that created it. Other API keys must not discover or revoke it.
+- Validate all untrusted HTTP input and use the stable error shape in `docs/API_CONTRACTS.md`.
+- Use short, bounded session lifetimes. Expired and revoked sessions must fail validation.
+- Put only identifiers and redacted synthetic metadata in SQS, S3, SES, logs, metrics, and traces.
+- Database migrations are forward-only and limited to the minimal tables in `docs/DATA_MODEL.md`.
 
 ## Required verification
 
-Run the smallest relevant unit and integration tests while working, then the affected end-to-end journeys before calling a change complete. For any public HTTP, migration, queue-handler, token, authorization, or infrastructure change, also run the security and contract tests specified in `docs/TESTING.md`. Inspect CI failures rather than bypassing them.
+Run the smallest relevant unit and integration tests while working, then the complete showcase journey in `docs/TESTING.md`. Console, API-key, session, event-worker, schema, logging, or infrastructure changes require the related security, contract, AWS integration, and teardown checks.
 
 ## When to stop and ask
 
-Ask for direction before changing a public contract incompatibly, weakening a security invariant, deleting or backfilling production data, enabling real email delivery, spending materially more on AWS, or making an irreversible infrastructure change. Surface uncertainty explicitly; do not solve it by inventing behavior.
+Ask before adding real user data, passwords, non-simulator email, data retention after teardown, a public production commitment, another deployable service, another database, another queue, or an AWS service outside the documented evaluation set. Surface uncertainty explicitly.

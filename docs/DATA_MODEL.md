@@ -1,44 +1,57 @@
-# Data model
+# Temporary data model
 
-## Ownership and tenancy
+## Storage and retention rule
 
-PostgreSQL is the durable source of truth. Use UUID primary keys, `created_at`, `updated_at`, and UTC `timestamptz`. Business tables that belong to an application tenant include non-null `project_id` indexed as the leading column for common access paths. Foreign keys enforce same-project ownership either directly or through composite unique keys such as `(id, project_id)`.
+Amazon RDS for PostgreSQL is authoritative only while the temporary showcase environment exists. Every record must be synthetic. Terraform teardown deletes the database without a final snapshot, and no backup or export may retain application data after evaluation.
 
-Use a restricted database role at runtime. Migrations use a separate role. Application code does not issue cross-project reporting queries. Consider PostgreSQL row-level security only after application-level predicates and test coverage are proven; it is defense in depth, not a substitute for correct queries.
+Redis and S3 are part of the AWS evaluation but are not alternate authorities. Redis is disposable. S3 receives only redacted synthetic event artifacts and is emptied during teardown.
 
-## Core tables
+## PostgreSQL tables
 
-| Table | Owner | Key fields and constraints |
-| --- | --- | --- |
-| `developer_organizations` | developer-platform | `id`, `name`; platform owner boundary. |
-| `developer_memberships` | developer-platform | `(organization_id, developer_user_id)` unique; console role. |
-| `projects` | developer-platform | `id`, `organization_id`, `name`, `status`; project is tenant boundary. |
-| `project_environments` | developer-platform | `id`, `project_id`, `name`, `issuer`, `audience`; unique `(project_id,name)`. |
-| `api_keys` | developer-platform | `id`, `project_id`, `environment_id`, `kind`, `secret_hash`, `prefix`, `scopes`, `revoked_at`, `expires_at`; unique hash and non-secret prefix only. |
-| `redirect_urls` | developer-platform | `id`, `project_id`, `url`, `kind`; normalized URL unique per project. |
-| `users` | identity | `id`, `project_id`, `primary_email_normalized`, `password_hash`, `email_verified_at`, `status`, `token_version`; unique `(project_id,primary_email_normalized)`. |
-| `verification_tokens` | identity | `id`, `user_id`, `project_id`, `token_hash`, `expires_at`, `consumed_at`; only one active token per purpose/user enforced by partial unique index. |
-| `password_reset_tokens` | identity | Same opaque-token pattern; consume once and expire quickly. |
-| `sessions` | sessions | `id`, `project_id`, `user_id`, `created_at`, `last_seen_at`, `revoked_at`, `revoke_reason`, device metadata minimized. |
-| `refresh_token_families` | sessions | `id`, `project_id`, `user_id`, `session_id`, `absolute_expires_at`, `revoked_at`, `replay_detected_at`. |
-| `refresh_tokens` | sessions | `id`, `project_id`, `family_id`, `token_hash`, `expires_at`, `consumed_at`, `replaced_by_id`; hash unique. |
-| `roles` | authorization | `id`, `project_id`, `name`, `description`; unique `(project_id,name)`. |
-| `permissions` | authorization | `id`, `code`; platform-controlled permission vocabulary. |
-| `role_permissions` | authorization | unique `(role_id,permission_id)`. |
-| `user_roles` | authorization | `project_id`, `user_id`, `role_id`; uniqueness prevents duplicate grants. |
-| `audit_events` | audit | append-only: `id`, `project_id`, `actor_type`, `actor_id`, `action`, `target_type`, `target_id`, `occurred_at`, redacted metadata, correlation ID. |
-| `outbox_events` | notifications/shared | `id`, `event_type`, `event_version`, payload reference, `occurred_at`, `published_at`, lease fields. |
-| `consumer_inbox` | notifications/shared | unique `(event_id,consumer_name)` with processing lease and completion timestamp; supports at-least-once deduplication. |
-| `idempotency_records` | shared | scoped key, request hash, response status/body reference, expiration; unique scope/key. |
+| Table | Key fields and constraints |
+| --- | --- |
+| `showcase_console_sessions` | `id`, `token_digest`, `csrf_digest`, `created_at`, `expires_at`, `revoked_at`; no developer identity fields. |
+| `showcase_api_keys` | `id`, `name`, `prefix`, `secret_digest`, `created_at`, `revoked_at`; unique digest and non-secret prefix. |
+| `showcase_sessions` | `id`, `api_key_id`, `subject`, `token_digest`, `created_at`, `expires_at`, `revoked_at`; unique digest and indexed ownership. |
+| `showcase_outbox_events` | `id`, `event_type`, `event_version`, redacted JSON payload, `created_at`, `published_at`. |
+| `showcase_worker_inbox` | Unique `(event_id, consumer_name)` completion records that prevent duplicate worker side effects after successful processing. |
 
-## Sensitive data rules
+Do not add users, emails, passwords, organizations, projects, environments, roles, permissions, refresh tokens, profile fields, or durable audit tables.
 
-Passwords use Argon2id and are never decryptable. Opaque tokens and secret keys use a keyed server-side hash before storage. Normalize email addresses conservatively for matching, preserve the original display address only when necessary, and encrypt any sensitive profile fields at rest using application envelope encryption backed by KMS. Do not put raw tokens in `audit_events` or `outbox_events`.
+## Sensitive-field rules
 
-## Indexes and retention
+- API-key, session-token, console-cookie, and CSRF values use cryptographically secure randomness.
+- PostgreSQL stores only keyed digests of raw credential values.
+- Prefixes and names are display metadata and must not contain real secrets or personal data.
+- The raw API key and session token appear only in their creation response.
+- The console access code and digest key live in Secrets Manager and are encrypted with KMS.
 
-Create indexes for `users(project_id, primary_email_normalized)`, active sessions by `(project_id, user_id, revoked_at)`, active refresh tokens by hash, audit scan by `(project_id, occurred_at DESC)`, unprocessed outbox rows, and idempotency expiry. Partition audit events by month only when observed volume justifies it. Expire consumed verification/reset tokens, idempotency records, and refresh tokens after their defined retention period via scheduled job. Retain audit records online for 90 days in v1 then archive encrypted immutable objects to S3 according to `SECURITY.md`.
+## Invariants
+
+1. Every application session belongs to exactly one API key.
+2. Revoking an API key revokes all sessions owned by it in the same transaction.
+3. Expired or revoked credentials never authenticate.
+4. Other API keys cannot discover or revoke a session they do not own.
+5. Every mutation and its outbox event commit together.
+6. SQS, S3, SES, logs, metrics, and traces never receive raw credentials or subjects.
+7. All application records are deleted with the temporary environment.
+
+## Redis records
+
+Redis may contain only:
+
+- Console access-code attempt counters with short TTLs.
+- Short-lived API-key and session-validation cache entries.
+- Revocation hints bounded by credential expiry.
+
+Redis loss must not grant access. Cache misses resolve through PostgreSQL. If the login-rate limiter is unavailable, console login fails closed with `503 dependency_unavailable`.
+
+## S3 event artifacts
+
+Each worker artifact may contain event ID, event type, event version, timestamp, API-key ID, session ID, correlation ID, processing result, and synthetic marker. It must not contain `subject`, raw payload bodies, secrets, email addresses, or authorization data.
+
+Use a short lifecycle expiration as defense in depth. Terraform teardown must empty and delete the bucket even if lifecycle expiration has not run.
 
 ## Migration rules
 
-Migrations are immutable after merge, forward-only, and run automatically once per deployment before application rollout. Use expand-migrate-contract: add compatible schema, deploy code that supports both forms, backfill with a throttled resumable job, then remove old schema in a later release. Every migration has a rollback posture, lock-impact assessment, and a test against a production-like dataset size.
+Migrations are forward-only and reviewable. They run before the API and worker tasks start. Because the environment is disposable, rollback means destroying and recreating the stack rather than preserving incompatible demo data.
