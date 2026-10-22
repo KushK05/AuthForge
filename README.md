@@ -23,7 +23,7 @@ RDS, Redis, S3, queues, logs, and other resources may contain synthetic showcase
 
 ## Current repository status
 
-The documentation defines the new target scope. Some source files, tests, dependencies, Compose services, and Terraform files still reflect the superseded production feature set. Future implementation work must simplify that code while preserving the AWS evaluation surface.
+M0 is complete: the application source, configuration, dependencies, migrations, and tests describe only the developer console, API keys, application sessions, showcase events, and required AWS adapters. Redis remains in the local topology for later console throttling and validation cache. Terraform still provisions the temporary evaluation environment and will be completed in later milestones.
 
 ## Explicitly excluded
 

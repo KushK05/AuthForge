@@ -1,53 +1,23 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import {
   ApplicationError,
+  capacityExceeded,
   invalidCredentials,
   invalidRequest,
+  notFound,
   unavailableDependency
 } from "../shared/application/errors.js";
-import { authenticateSecretApiKey } from "../modules/developer-platform/application/authenticate-secret-key.js";
-import {
-  authenticatePublishableApiKey,
-  type PublishableApiKeyReader
-} from "../modules/developer-platform/application/authenticate-publishable-key.js";
-import {
-  createApiKey,
-  hashCreateApiKeyRequest,
-  type ApiKeyCreationRepository
-} from "../modules/developer-platform/application/create-api-key.js";
-import {
-  createProject,
-  type DeveloperPlatformRepository
-} from "../modules/developer-platform/application/create-project.js";
-import { listProjects, type ProjectListReader } from "../modules/developer-platform/application/list-projects.js";
-import { revokeApiKey, type ApiKeyRevocationRepository } from "../modules/developer-platform/application/revoke-api-key.js";
-import { replaceRedirectUrls, type RedirectUrlRepository } from "../modules/developer-platform/application/replace-redirect-urls.js";
-import { normalizeRedirectUrls } from "../modules/developer-platform/application/replace-redirect-urls.js";
-import type { RedirectUrlReader } from "../modules/developer-platform/application/redirect-url-reader.js";
-import {
-  createRole,
-  hashCreateRoleRequest,
-  type RoleCreationRepository
-} from "../modules/authorization/application/create-role.js";
-import {
-  replaceUserRoles,
-  type UserRoleAssignmentRepository
-} from "../modules/authorization/application/replace-user-roles.js";
-import {
-  confirmEmailVerification,
-  type EmailVerificationRepository
-} from "../modules/identity/application/confirm-email-verification.js";
-import { hashSignUpRequest, signUp, type SignUpRepository } from "../modules/identity/application/sign-up.js";
-import type { IdentityUserReader } from "../modules/identity/application/user-reader.js";
-import type { AccessTokenJwksProvider } from "../modules/sessions/application/access-token-signer.js";
-import type { SecretApiKeyReader } from "../modules/developer-platform/application/authenticate-secret-key.js";
+import { hashOpaqueSecret } from "../shared/crypto/opaque-secret.js";
 import type { AppConfig } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
-import { hashOpaqueSecret } from "../shared/crypto/opaque-secret.js";
+import { ApiKeyService } from "../modules/api-keys/api-key-service.js";
+import { ConsoleService } from "../modules/developer-console/console-service.js";
+import { type ConsoleRateLimiter, MemoryConsoleRateLimiter } from "../platform/redis.js";
+import type { ApiKeyRecord, ApplicationSessionRecord, ConsoleSessionRecord, ShowcaseStore } from "../platform/store.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -55,68 +25,46 @@ declare module "fastify" {
   }
 }
 
-export type DeveloperPlatformDependencies = Readonly<{
-  repository: DeveloperPlatformRepository & SecretApiKeyReader;
-  projectListReader?: ProjectListReader;
-  apiKeyCreationRepository?: ApiKeyCreationRepository;
-  apiKeyRevocationRepository?: ApiKeyRevocationRepository;
-  redirectUrlRepository?: RedirectUrlRepository;
-  publishableApiKeyReader?: PublishableApiKeyReader;
-  redirectUrlReader?: RedirectUrlReader;
-}>;
+const cookieName = "authforge_console";
 
-export type IdentityDependencies = Readonly<{
-  signUpRepository: SignUpRepository;
-  emailVerificationRepository: EmailVerificationRepository;
-  userReader?: IdentityUserReader;
-}>;
+const parseCookie = (header: string | undefined, name: string): string | undefined => {
+  const pair = header?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  return pair?.slice(name.length + 1);
+};
 
-export type AuthorizationDependencies = Readonly<{
-  roleCreationRepository: RoleCreationRepository;
-  userRoleAssignmentRepository?: UserRoleAssignmentRepository;
-}>;
+const rawToken = (prefix: string): string => `${prefix}_${randomBytes(32).toString("base64url")}`;
+const digest = (value: string, config: AppConfig): Buffer => hashOpaqueSecret(value, config.credentialHashKey);
+const iso = (value: Date): string => value.toISOString();
 
-export type SessionDependencies = Readonly<{
-  accessTokenJwksProvider: AccessTokenJwksProvider;
-}>;
+const publicSession = (record: ApplicationSessionRecord) => ({
+  id: record.id,
+  api_key_id: record.apiKeyId,
+  subject: record.subject,
+  created_at: iso(record.createdAt),
+  expires_at: iso(record.expiresAt),
+  ...(record.revokedAt ? { revoked_at: iso(record.revokedAt) } : {})
+});
 
-const createProjectBodySchema = z.object({ name: z.string() }).strict();
-const createApiKeyBodySchema = z.object({
-  kind: z.enum(["secret", "publishable"]),
-  scopes: z.array(z.string().regex(/^[a-z][a-z0-9:_-]{0,63}$/)).max(50).default([])
-}).strict();
-const signUpBodySchema = z.object({
-  email: z.string().trim().email().max(320),
-  password: z.string().max(1_024),
-  redirect_url: z.string().max(2_048).optional()
-}).strict();
-const confirmEmailVerificationBodySchema = z.object({ token: z.string().max(512) }).strict();
-const createRoleBodySchema = z.object({
-  name: z.string(),
-  description: z.string().max(1_024).optional(),
-  permissions: z.array(z.string().regex(/^[a-z][a-z0-9:_-]{0,63}$/)).min(1).max(50)
-}).strict();
-const replaceUserRolesBodySchema = z.object({
-  role_ids: z.array(z.string().uuid()).max(50)
-}).strict();
-const idempotencyKeyPattern = /^[A-Za-z0-9._:-]{1,255}$/;
+const getOrigin = (request: FastifyRequest): string | undefined => {
+  const origin = request.headers.origin;
+  return typeof origin === "string" ? origin : undefined;
+};
 
 export const buildApi = (
   config: AppConfig,
-  logger = new Logger(config.logLevel, config.environment),
-  developerPlatform?: DeveloperPlatformDependencies,
-  identity?: IdentityDependencies,
-  authorization?: AuthorizationDependencies,
-  sessions?: SessionDependencies
+  store: ShowcaseStore,
+  rateLimiter: ConsoleRateLimiter = new MemoryConsoleRateLimiter(),
+  logger = new Logger(config.logLevel, config.environment)
 ): FastifyInstance => {
   const api = Fastify({ logger: false });
+  const consoleService = new ConsoleService(config, store, rateLimiter);
+  const apiKeyService = new ApiKeyService(config, store);
 
   api.addHook("onRequest", async (request, reply) => {
-    const clientRequestId = request.headers["x-request-id"];
-    request.requestId =
-      typeof clientRequestId === "string" && /^[A-Za-z0-9_-]{8,128}$/.test(clientRequestId)
-        ? clientRequestId
-        : `req_${randomUUID()}`;
+    const supplied = request.headers["x-request-id"];
+    request.requestId = typeof supplied === "string" && /^[A-Za-z0-9_-]{8,128}$/.test(supplied)
+      ? supplied
+      : `req_${randomUUID()}`;
     reply.header("X-Request-Id", request.requestId);
   });
 
@@ -130,345 +78,144 @@ export const buildApi = (
   });
 
   api.setErrorHandler((error, request, reply) => {
-    const applicationError = error instanceof ApplicationError ? error : undefined;
-    const status = applicationError?.status ?? 500;
-    const code = applicationError?.code ?? "internal_error";
-    const title = applicationError?.title ?? "Internal server error";
-
-    if (!applicationError) {
+    const known = error instanceof ApplicationError;
+    const status = known ? error.status : 500;
+    const code = known ? error.code : "internal_error";
+    if (!known) {
       logger.error("Unhandled request error", {
         request_id: request.requestId,
-        route: request.routeOptions.url,
         error_name: error instanceof Error ? error.name : "UnknownError"
       });
     }
-
-    void reply.status(status).type("application/problem+json").send({
-      type: `https://authforge.example/problems/${code.replaceAll("_", "-")}`,
-      title,
-      status,
-      code,
-      request_id: request.requestId
-    });
-  });
-
-  api.get("/healthz", async () => ({ status: "ok" }));
-  api.get("/readyz", async () => ({ status: "ok" }));
-
-  api.get("/v1/projects/:projectId/.well-known/jwks.json", async (request, reply) => {
-    if (!sessions) throw unavailableDependency();
-    const params = z.object({ projectId: z.string().uuid() }).safeParse(request.params);
-    if (!params.success) throw invalidRequest("Invalid JWKS project request");
-    reply.header("Cache-Control", "public, max-age=300");
-    return sessions.accessTokenJwksProvider.jwks();
-  });
-
-  api.post("/v1/sign-ups", async (request, reply) => {
-    const authorization = request.headers.authorization;
-    const match = typeof authorization === "string" ? /^Bearer (pk_[A-Za-z0-9_-]{43})$/.exec(authorization) : null;
-    const publishableApiKey = match?.[1];
-    if (!publishableApiKey) throw invalidCredentials();
-    if (!developerPlatform?.publishableApiKeyReader || !identity) throw unavailableDependency();
-
-    const idempotencyKey = request.headers["idempotency-key"];
-    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
-      throw invalidRequest("A valid Idempotency-Key header is required");
-    }
-    const body = signUpBodySchema.safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid sign-up request");
-
-    const now = new Date();
-    const actor = await authenticatePublishableApiKey(
-      developerPlatform.publishableApiKeyReader,
-      hashOpaqueSecret(publishableApiKey, config.apiKeyHashKey),
-      now
-    );
-    let redirectUrl: string | undefined;
-    if (body.data.redirect_url) {
-      if (!developerPlatform.redirectUrlReader) throw unavailableDependency();
-      const normalizedRedirectUrl = normalizeRedirectUrls([body.data.redirect_url], config.environment)[0];
-      if (!normalizedRedirectUrl) throw invalidRequest("Invalid redirect_url");
-      if (!(await developerPlatform.redirectUrlReader.hasRedirectUrl({ projectId: actor.projectId, url: normalizedRedirectUrl }))) {
-        throw invalidRequest("redirect_url is not configured for this project");
+    void reply.status(status).send({
+      error: {
+        code,
+        message: known ? error.message : "Internal server error",
+        request_id: request.requestId
       }
-      redirectUrl = normalizedRedirectUrl;
-    }
-
-    const result = await signUp(identity.signUpRepository, {
-      authenticatedProjectId: actor.projectId,
-      actorKeyId: actor.id,
-      email: body.data.email,
-      password: body.data.password,
-      redirectUrl,
-      correlationId: request.requestId,
-      idempotencyKey,
-      requestHash: hashSignUpRequest(
-        { email: body.data.email, password: body.data.password, redirectUrl },
-        config.apiKeyHashKey
-      ),
-      tokenDerivationKey: config.tokenDerivationKey,
-      passwordMinimumLength: config.passwordMinLength,
-      argon2: config.argon2,
-      now
-    });
-    return reply.status(202).send(result);
-  });
-
-  api.post("/v1/email-verifications/confirm", async (request) => {
-    if (!identity) throw unavailableDependency();
-    const body = confirmEmailVerificationBodySchema.safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid email verification request");
-    return confirmEmailVerification(identity.emailVerificationRepository, {
-      token: body.data.token,
-      tokenDerivationKey: config.tokenDerivationKey,
-      correlationId: request.requestId,
-      now: new Date()
     });
   });
 
-  api.post("/v1/developer/projects/:projectId/roles", async (request, reply) => {
-    const authorizationHeader = request.headers.authorization;
-    const match = typeof authorizationHeader === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorizationHeader) : null;
-    const secretApiKey = match?.[1];
-    if (!secretApiKey) throw invalidCredentials();
-    if (!developerPlatform || !authorization) throw unavailableDependency();
-    const idempotencyKey = request.headers["idempotency-key"];
-    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
-      throw invalidRequest("A valid Idempotency-Key header is required");
-    }
-    const params = z.object({ projectId: z.string().uuid() }).safeParse(request.params);
-    const body = createRoleBodySchema.safeParse(request.body);
-    if (!params.success || !body.success) throw invalidRequest("Invalid role creation request");
-    const now = new Date();
-    const actor = await authenticateSecretApiKey(
-      developerPlatform.repository,
-      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
-      "roles:write",
-      now
-    );
-    const result = await createRole(authorization.roleCreationRepository, {
-      authenticatedProjectId: actor.projectId,
-      actorKeyId: actor.id,
-      targetProjectId: params.data.projectId,
-      name: body.data.name,
-      description: body.data.description,
-      permissions: body.data.permissions,
-      correlationId: request.requestId,
-      idempotencyKey,
-      requestHash: hashCreateRoleRequest({ ...body.data, description: body.data.description }),
-      now
-    });
-    return reply.status(result.replayed ? 200 : 201).send(result.role);
-  });
+  const requireConsole = async (request: FastifyRequest, mutation: boolean): Promise<ConsoleSessionRecord> => {
+    const token = parseCookie(request.headers.cookie, cookieName);
+    const origin = getOrigin(request);
+    const csrf = typeof request.headers["x-csrf-token"] === "string" ? request.headers["x-csrf-token"] : undefined;
+    return consoleService.verifySession(token, origin, mutation, csrf);
+  };
 
-  api.put("/v1/developer/projects/:projectId/users/:userId/roles", async (request) => {
-    const authorizationHeader = request.headers.authorization;
-    const match = typeof authorizationHeader === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorizationHeader) : null;
-    const secretApiKey = match?.[1];
-    if (!secretApiKey) throw invalidCredentials();
-    if (!developerPlatform || !identity?.userReader || !authorization?.userRoleAssignmentRepository) {
+  const requireApiKey = async (request: FastifyRequest): Promise<ApiKeyRecord> => {
+    return apiKeyService.authenticateKey(request.headers.authorization);
+  };
+
+  api.get("/health/live", async () => ({ status: "ok" }));
+  api.get("/health/ready", async (_request, reply) => {
+    try {
+      await store.ready();
+      await rateLimiter.ready();
+      return reply.send({ status: "ok" });
+    } catch (error) {
+      if (error instanceof ApplicationError) throw error;
       throw unavailableDependency();
     }
-    const idempotencyKey = request.headers["idempotency-key"];
-    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
-      throw invalidRequest("A valid Idempotency-Key header is required");
-    }
-    const params = z.object({ projectId: z.string().uuid(), userId: z.string().uuid() }).safeParse(request.params);
-    const body = replaceUserRolesBodySchema.safeParse(request.body);
-    if (!params.success || !body.success) throw invalidRequest("Invalid user role assignment request");
-    const now = new Date();
-    const actor = await authenticateSecretApiKey(
-      developerPlatform.repository,
-      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
-      "roles:write",
-      now
-    );
-    const roleIds = await replaceUserRoles(authorization.userRoleAssignmentRepository, identity.userReader, {
-      authenticatedProjectId: actor.projectId,
-      actorKeyId: actor.id,
-      targetProjectId: params.data.projectId,
-      userId: params.data.userId,
-      roleIds: body.data.role_ids,
-      correlationId: request.requestId,
-      idempotencyKey,
-      now
-    });
-    return { role_ids: roleIds };
   });
 
-  api.post("/v1/developer/projects", async (request, reply) => {
-    const authorization = request.headers.authorization;
-    const match = typeof authorization === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorization) : null;
-    const secretApiKey = match?.[1];
-    if (!secretApiKey) throw invalidCredentials();
-    if (!developerPlatform) throw unavailableDependency();
-
-    const idempotencyKey = request.headers["idempotency-key"];
-    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
-      throw invalidRequest("A valid Idempotency-Key header is required");
-    }
-
-    const body = createProjectBodySchema.safeParse(request.body);
-    if (!body.success) throw invalidRequest("Request body must contain only a project name");
-
-    const actor = await authenticateSecretApiKey(
-      developerPlatform.repository,
-      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
-      "projects:write",
-      new Date()
-    );
-    const result = await createProject(developerPlatform.repository, {
-      authenticatedProjectId: actor.projectId,
-      actorKeyId: actor.id,
-      name: body.data.name,
-      correlationId: request.requestId,
-      issuerBaseUrl: config.publicIssuerBaseUrl,
-      idempotencyKey,
-      requestHash: createHash("sha256").update(JSON.stringify(body.data)).digest(),
-      now: new Date()
-    });
-
-    return reply.status(result.replayed ? 200 : 201).send(result.project);
+  api.post("/v1/console/session", async (request, reply) => {
+    const body = z.object({ access_code: z.string().min(1).max(256) }).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid console access request");
+    const { token, csrfToken } = await consoleService.login(body.data.access_code, request.ip);
+    const secure = config.secureCookies ? "; Secure" : "";
+    reply.header("Set-Cookie", `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=900${secure}`);
+    reply.header("Cache-Control", "no-store");
+    return reply.send({ csrf_token: csrfToken });
   });
 
-  api.get("/v1/developer/projects", async (request) => {
-    const authorization = request.headers.authorization;
-    const match = typeof authorization === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorization) : null;
-    const secretApiKey = match?.[1];
-    if (!secretApiKey) throw invalidCredentials();
-    if (!developerPlatform?.projectListReader) throw unavailableDependency();
-    const query = z.object({
-      cursor: z.string().uuid().optional(),
-      limit: z.coerce.number().int().min(1).max(100).default(50)
-    }).safeParse(request.query);
-    if (!query.success) throw invalidRequest("Invalid project list query");
-    const actor = await authenticateSecretApiKey(
-      developerPlatform.repository,
-      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
-      "projects:read",
-      new Date()
-    );
-    const page = await listProjects(developerPlatform.projectListReader, {
-      authenticatedProjectId: actor.projectId,
-      cursor: query.data.cursor,
-      limit: query.data.limit
-    });
-    return { data: page.data, next_cursor: page.nextCursor };
-  });
-
-  api.post("/v1/developer/projects/:projectId/keys", async (request, reply) => {
-    const authorization = request.headers.authorization;
-    const match = typeof authorization === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorization) : null;
-    const secretApiKey = match?.[1];
-    if (!secretApiKey) throw invalidCredentials();
-    if (!developerPlatform?.apiKeyCreationRepository) throw unavailableDependency();
-
-    const idempotencyKey = request.headers["idempotency-key"];
-    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
-      throw invalidRequest("A valid Idempotency-Key header is required");
-    }
-
-    const params = z.object({ projectId: z.string().uuid() }).safeParse(request.params);
-    const body = createApiKeyBodySchema.safeParse(request.body);
-    if (!params.success || !body.success) throw invalidRequest("Invalid project key request");
-    if (body.data.kind === "secret" && body.data.scopes.length === 0) {
-      throw invalidRequest("Secret API keys require at least one scope");
-    }
-    if (body.data.kind === "publishable" && body.data.scopes.length > 0) {
-      throw invalidRequest("Publishable keys cannot have management scopes");
-    }
-
-    const now = new Date();
-    const actor = await authenticateSecretApiKey(
-      developerPlatform.repository,
-      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
-      "keys:write",
-      now
-    );
-    const result = await createApiKey(developerPlatform.apiKeyCreationRepository, {
-      authenticatedProjectId: actor.projectId,
-      actorKeyId: actor.id,
-      targetProjectId: params.data.projectId,
-      kind: body.data.kind,
-      scopes: body.data.scopes,
-      hashKey: config.apiKeyHashKey,
-      correlationId: request.requestId,
-      idempotencyKey,
-      requestHash: hashCreateApiKeyRequest(body.data),
-      now
-    });
-    return reply.status(result.replayed ? 200 : 201).send({
-      ...result.key,
-      raw_key: result.rawKey
-    });
-  });
-
-  api.delete("/v1/developer/projects/:projectId/keys/:keyId", async (request, reply) => {
-    const authorization = request.headers.authorization;
-    const match = typeof authorization === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorization) : null;
-    const secretApiKey = match?.[1];
-    if (!secretApiKey) throw invalidCredentials();
-    if (!developerPlatform?.apiKeyRevocationRepository) throw unavailableDependency();
-
-    const idempotencyKey = request.headers["idempotency-key"];
-    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
-      throw invalidRequest("A valid Idempotency-Key header is required");
-    }
-    const params = z.object({ projectId: z.string().uuid(), keyId: z.string().uuid() }).safeParse(request.params);
-    if (!params.success) throw invalidRequest("Invalid project key request");
-
-    const now = new Date();
-    const actor = await authenticateSecretApiKey(
-      developerPlatform.repository,
-      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
-      "keys:write",
-      now
-    );
-    await revokeApiKey(developerPlatform.apiKeyRevocationRepository, {
-      authenticatedProjectId: actor.projectId,
-      actorKeyId: actor.id,
-      targetProjectId: params.data.projectId,
-      targetKeyId: params.data.keyId,
-      correlationId: request.requestId,
-      idempotencyKey,
-      now
-    });
+  api.delete("/v1/console/session", async (request, reply) => {
+    const session = await requireConsole(request, true);
+    await consoleService.revokeSession(session.id);
+    const secure = config.secureCookies ? "; Secure" : "";
+    reply.header("Set-Cookie", `${cookieName}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
     return reply.status(204).send();
   });
 
-  api.put("/v1/developer/projects/:projectId/redirect-urls", async (request, reply) => {
-    const authorization = request.headers.authorization;
-    const match = typeof authorization === "string" ? /^Bearer (sk_[A-Za-z0-9_-]{43})$/.exec(authorization) : null;
-    const secretApiKey = match?.[1];
-    if (!secretApiKey) throw invalidCredentials();
-    if (!developerPlatform?.redirectUrlRepository) throw unavailableDependency();
+  api.get("/v1/console/state", async (request) => {
+    await requireConsole(request, false);
+    return consoleService.getState();
+  });
 
-    const idempotencyKey = request.headers["idempotency-key"];
-    if (typeof idempotencyKey !== "string" || !idempotencyKeyPattern.test(idempotencyKey)) {
-      throw invalidRequest("A valid Idempotency-Key header is required");
-    }
-    const params = z.object({ projectId: z.string().uuid() }).safeParse(request.params);
-    const body = z.object({ urls: z.array(z.string()).max(50) }).strict().safeParse(request.body);
-    if (!params.success || !body.success) throw invalidRequest("Invalid redirect URL request");
+  api.post("/v1/api-keys", async (request, reply) => {
+    await requireConsole(request, true);
+    const body = z.object({ name: z.string().trim().min(1).max(120) }).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid API-key request");
+    const created = await apiKeyService.createKey(body.data.name);
+    reply.header("Cache-Control", "no-store");
+    return reply.status(201).send(created);
+  });
 
-    const now = new Date();
-    const actor = await authenticateSecretApiKey(
-      developerPlatform.repository,
-      hashOpaqueSecret(secretApiKey, config.apiKeyHashKey),
-      "projects:write",
-      now
-    );
-    const urls = await replaceRedirectUrls(developerPlatform.redirectUrlRepository, {
-      authenticatedProjectId: actor.projectId,
-      actorKeyId: actor.id,
-      targetProjectId: params.data.projectId,
-      urls: body.data.urls,
-      environment: config.environment,
-      correlationId: request.requestId,
-      idempotencyKey,
-      now
-    });
-    return reply.status(200).send({ urls });
+  api.get("/v1/api-keys", async (request) => {
+    await requireConsole(request, false);
+    return { data: await apiKeyService.listKeys() };
+  });
+
+  api.delete("/v1/api-keys/:keyId", async (request, reply) => {
+    await requireConsole(request, true);
+    const params = z.object({ keyId: z.string() }).safeParse(request.params);
+    if (!params.success) throw invalidRequest("Invalid API-key identifier");
+    await apiKeyService.revokeKey(params.data.keyId);
+    return reply.status(204).send();
+  });
+
+  api.post("/v1/sessions", async (request, reply) => {
+    const apiKey = await requireApiKey(request);
+    const body = z.object({
+      subject: z.string().trim().min(1).max(config.maxSubjectLength),
+      ttl_seconds: z.coerce.number().int().min(30).max(config.maxSessionTtlSeconds).optional()
+    }).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid session request");
+    if (await store.countSessions() >= config.maxSessions) throw capacityExceeded();
+    const token = rawToken("sess");
+    const createdAt = new Date();
+    const record: ApplicationSessionRecord = {
+      id: randomUUID(),
+      apiKeyId: apiKey.id,
+      subject: body.data.subject,
+      tokenDigest: digest(token, config),
+      createdAt,
+      expiresAt: new Date(createdAt.getTime() + (body.data.ttl_seconds ?? config.defaultSessionTtlSeconds) * 1_000)
+    };
+    await store.createSession(record);
+    reply.header("Cache-Control", "no-store");
+    return reply.status(201).send({ ...publicSession(record), token });
+  });
+
+  api.post("/v1/sessions/validate", async (request) => {
+    const apiKey = await requireApiKey(request);
+    const body = z.object({ token: z.string().min(1).max(512) }).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid session validation request");
+    const session = await store.findSession(apiKey.id, digest(body.data.token, config), new Date());
+    if (!session) throw invalidCredentials("invalid_session");
+    return { valid: true, session: publicSession(session) };
+  });
+
+  api.get("/v1/sessions", async (request) => {
+    const apiKey = await requireApiKey(request);
+    return { data: (await store.listSessions(apiKey.id)).map(publicSession) };
+  });
+
+  api.delete("/v1/sessions/:sessionId", async (request, reply) => {
+    const apiKey = await requireApiKey(request);
+    const params = z.object({ sessionId: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) throw invalidRequest("Invalid session identifier");
+    const revoked = await store.revokeSession(params.data.sessionId, apiKey.id, new Date());
+    if (!revoked) throw notFound();
+    return reply.status(204).send();
+  });
+
+  api.delete("/v1/console/sessions/:sessionId", async (request, reply) => {
+    await requireConsole(request, true);
+    const params = z.object({ sessionId: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) throw invalidRequest("Invalid session identifier");
+    await store.revokeSession(params.data.sessionId, undefined, new Date());
+    return reply.status(204).send();
   });
 
   return api;

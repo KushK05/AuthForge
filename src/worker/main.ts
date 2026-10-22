@@ -1,39 +1,37 @@
-import { randomUUID } from "node:crypto";
-
 import postgres from "postgres";
 
-import { PostgresOutboxPublisherRepository } from "../modules/notifications/infrastructure/postgres-outbox-publisher-repository.js";
-import { createSqsQueuePublisher } from "../modules/notifications/infrastructure/sqs-queue-publisher.js";
+import { PostgresShowcaseOutbox, ShowcaseOutboxWorker } from "../modules/showcase-events/outbox-worker.js";
 import { loadConfig, loadLocalEnvironmentFile } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
-import { publishOutbox } from "./publish-outbox.js";
 
 loadLocalEnvironmentFile();
 const config = loadConfig();
 const logger = new Logger(config.logLevel, config.environment);
 const database = postgres(config.databaseUrl, { max: 5 });
-const repository = new PostgresOutboxPublisherRepository(database);
-const queue = createSqsQueuePublisher(config);
-const workerId = `outbox-publisher:${randomUUID()}`;
+const worker = new ShowcaseOutboxWorker(config, new PostgresShowcaseOutbox(database), logger);
 
-logger.info("Worker started", { module: "worker" });
-
-let inFlight: Promise<void> | undefined;
-const publish = (): void => {
-  if (inFlight) return;
-  inFlight = publishOutbox(repository, queue, logger, { owner: workerId, now: new Date() })
-    .finally(() => { inFlight = undefined; });
+let running = true;
+const loop = async (): Promise<void> => {
+  while (running) {
+    try {
+      await worker.runOnce();
+    } catch (error) {
+      logger.error("Worker iteration failed", {
+        error_name: error instanceof Error ? error.name : "UnknownError"
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
 };
-publish();
-const interval = setInterval(publish, 1_000);
 
-const stop = async (signal: string): Promise<void> => {
+const close = async (signal: string): Promise<void> => {
+  running = false;
   logger.info("Stopping worker", { signal, module: "worker" });
-  clearInterval(interval);
-  await inFlight;
   await database.end({ timeout: 5 });
   process.exit(0);
 };
 
-process.once("SIGTERM", () => void stop("SIGTERM"));
-process.once("SIGINT", () => void stop("SIGINT"));
+process.once("SIGTERM", () => void close("SIGTERM"));
+process.once("SIGINT", () => void close("SIGINT"));
+
+void loop();

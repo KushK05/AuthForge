@@ -18,4 +18,16 @@ describe("readMigrations", () => {
       { id: "0002_second", sql: "SELECT 2;" }
     ]);
   });
+
+  it("loads repository migrations and includes showcase_console_sessions and showcase_api_keys", async () => {
+    const migrations = await readMigrations();
+    expect(migrations.length).toBeGreaterThanOrEqual(9);
+
+    const showcaseCore = migrations.find((m) => m.id === "0008_showcase_core");
+    expect(showcaseCore).toBeDefined();
+    expect(showcaseCore?.sql).toContain("CREATE TABLE showcase_console_sessions");
+    expect(showcaseCore?.sql).toContain("CREATE TABLE showcase_api_keys");
+    expect(showcaseCore?.sql).toContain("showcase_console_sessions_active_idx");
+    expect(showcaseCore?.sql).toContain("showcase_api_keys_active_idx");
+  });
 });

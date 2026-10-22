@@ -1,80 +1,58 @@
-export type ProblemCode =
+export type ErrorCode =
   | "internal_error"
-  | "forbidden"
-  | "idempotency_key_reused"
-  | "invalid_credentials"
   | "invalid_request"
+  | "invalid_credentials"
+  | "invalid_api_key"
+  | "invalid_session"
+  | "invalid_console_access"
+  | "invalid_console_session"
+  | "invalid_csrf"
   | "not_found"
-  | "unavailable_dependency";
+  | "capacity_exceeded"
+  | "rate_limited"
+  | "dependency_unavailable";
 
 export class ApplicationError extends Error {
-  public readonly status: number;
-  public readonly code: ProblemCode;
-  public readonly title: string;
-
-  public constructor({
-    status,
-    code,
-    title,
-    message
-  }: {
-    status: number;
-    code: ProblemCode;
-    title: string;
-    message: string;
-  }) {
+  public constructor(
+    public readonly status: number,
+    public readonly code: ErrorCode,
+    message: string
+  ) {
     super(message);
     this.name = "ApplicationError";
-    this.status = status;
-    this.code = code;
-    this.title = title;
   }
 }
 
 export const invalidRequest = (message: string): ApplicationError =>
-  new ApplicationError({
-    status: 400,
-    code: "invalid_request",
-    title: "Invalid request",
-    message
-  });
+  new ApplicationError(400, "invalid_request", message);
 
-export const notFound = (message: string): ApplicationError =>
-  new ApplicationError({
-    status: 404,
-    code: "not_found",
-    title: "Resource not found",
-    message
-  });
+export const invalidCredentials = (
+  code: Extract<
+    ErrorCode,
+    "invalid_credentials" | "invalid_api_key" | "invalid_session" | "invalid_console_access" | "invalid_console_session"
+  > = "invalid_credentials"
+): ApplicationError => {
+  const messages: Record<string, string> = {
+    invalid_credentials: "Authentication failed",
+    invalid_api_key: "The supplied API key is invalid.",
+    invalid_session: "The supplied session is invalid or expired.",
+    invalid_console_access: "Invalid console access code.",
+    invalid_console_session: "Invalid or expired console session."
+  };
+  return new ApplicationError(401, code, messages[code] ?? "Authentication failed");
+};
 
-export const forbidden = (message: string): ApplicationError =>
-  new ApplicationError({
-    status: 403,
-    code: "forbidden",
-    title: "Forbidden",
-    message
-  });
+export const invalidCsrf = (): ApplicationError =>
+  new ApplicationError(403, "invalid_csrf", "CSRF validation failed");
 
-export const invalidCredentials = (): ApplicationError =>
-  new ApplicationError({
-    status: 401,
-    code: "invalid_credentials",
-    title: "Authentication failed",
-    message: "Authentication failed"
-  });
+export const notFound = (): ApplicationError =>
+  new ApplicationError(404, "not_found", "Resource not found");
 
-export const idempotencyKeyReused = (): ApplicationError =>
-  new ApplicationError({
-    status: 409,
-    code: "idempotency_key_reused",
-    title: "Idempotency key reused",
-    message: "Idempotency key was used with a different request"
-  });
+export const capacityExceeded = (): ApplicationError =>
+  new ApplicationError(429, "capacity_exceeded", "Showcase capacity exceeded");
+
+export const rateLimited = (): ApplicationError =>
+  new ApplicationError(429, "rate_limited", "Too many console access attempts");
 
 export const unavailableDependency = (): ApplicationError =>
-  new ApplicationError({
-    status: 503,
-    code: "unavailable_dependency",
-    title: "Unavailable dependency",
-    message: "A required dependency is unavailable"
-  });
+  new ApplicationError(503, "dependency_unavailable", "A required dependency is unavailable");

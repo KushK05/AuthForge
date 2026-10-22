@@ -2,20 +2,19 @@
   "name": "authforge",
   "version": "0.1.0",
   "private": true,
-  "description": "Multi-tenant authentication platform",
+  "description": "Temporary AWS authentication showcase for a developer console, API keys, and application sessions",
   "type": "module",
   "engines": {
     "node": ">=22 <27"
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "dev:api": "tsx watch src/showcase/server.ts",
-    "dev:worker": "tsx watch src/showcase/worker.ts",
+    "dev:api": "tsx watch src/api/server.ts",
+    "dev:worker": "tsx watch src/worker/main.ts",
     "lint": "eslint .",
     "migrate": "tsx src/platform/database/migrate.ts",
-    "seed:development": "tsx src/platform/seed-development.ts",
-    "start:api": "tsx src/showcase/server.ts",
-    "start:worker": "tsx src/showcase/worker.ts",
+    "start:api": "tsx src/api/server.ts",
+    "start:worker": "tsx src/worker/main.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -24,8 +23,8 @@
     "@aws-sdk/client-s3": "^3.1146.0",
     "@aws-sdk/client-sesv2": "^3.1146.0",
     "@aws-sdk/client-sqs": "^3.1113.0",
-    "argon2": "^0.45.1",
     "fastify": "^5.2.1",
+    "ioredis": "^6.0.0",
     "postgres": "^3.4.5",
     "zod": "^3.24.2"
   },

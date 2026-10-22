@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toQueueMessage, type ShowcaseOutboxEvent } from "../../src/showcase/outbox-worker.js";
+import { toQueueMessage, type ShowcaseOutboxEvent } from "../../src/modules/showcase-events/outbox-worker.js";
 
 describe("showcase outbox messages", () => {
   it("contains only the redacted event envelope and identifiers", () => {
