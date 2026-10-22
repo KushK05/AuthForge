@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuthForge - Developer Console & Evaluation Showcase</title>
+  <meta name="description" content="Minimalist, monochromatic developer console for API key and session lifecycle management.">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/console/styles.css">
+</head>
+<body>
+  <!-- Toast Notification Stack -->
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Application Shell -->
+  <div id="app-shell" class="app-shell">
+    
+    <!-- Top Navigation Bar -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-logo-mark">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <span class="brand-name">AuthForge</span>
+          <span class="brand-badge">Console</span>
+        </div>
+      </div>
+
+      <div class="header-status">
+        <div id="operator-indicator" class="operator-badge hidden">
+          <span class="operator-dot"></span>
+          <span class="operator-title">Operator Active</span>
+        </div>
+        <button id="btn-logout" class="btn btn-ghost btn-sm hidden" type="button" title="Revoke console session">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          <span>End Session</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+
+      <!-- ================= VIEW: LOGIN GATE ================= -->
+      <section id="view-login" class="view-section view-login">
+        <div class="login-container">
+          <div class="login-card glass-panel">
+            <div class="login-header">
+              <h1 class="login-title">Developer Console</h1>
+              <p class="login-description">Enter deployment operator access code to authenticate.</p>
+            </div>
+
+            <!-- Rate limit / error alert -->
+            <div id="login-alert" class="alert alert-danger hidden" role="alert">
+              <span id="login-alert-icon" class="alert-icon">!</span>
+              <span id="login-alert-message" class="alert-message">Invalid access code</span>
+            </div>
+
+            <form id="form-login" class="login-form" novalidate>
+              <div class="form-group">
+                <label for="input-access-code" class="form-label">Deployment Access Code</label>
+                <div class="input-password-wrapper">
+                  <input
+                    type="password"
+                    id="input-access-code"
+                    class="form-control"
+                    placeholder="Enter access code"
+                    autocomplete="current-password"
+                    required
+                    autofocus
+                  />
+                  <button type="button" id="btn-toggle-password" class="btn-toggle-eye" aria-label="Toggle password visibility">
+                    <svg id="eye-icon-show" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <svg id="eye-icon-hide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="hidden">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                      <line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" id="btn-login-submit" class="btn btn-primary btn-block">
+                <span class="btn-text">Authenticate Operator</span>
+                <span class="btn-spinner hidden"></span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Seamless Background Architecture Context -->
+          <div class="scope-disclaimer">
+            <span class="scope-disclaimer-title">Temporary AWS Evaluation Environment</span>
+            <p class="scope-disclaimer-text">
+              Demonstration scope only. No user accounts, personal identities, or persistent customer data are retained. All infrastructure, tables, and cached data are destroyed upon evaluation completion.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= VIEW: DASHBOARD ================= -->
+      <section id="view-dashboard" class="view-section view-dashboard hidden">
+        
+        <!-- Metrics Row -->
+        <div class="metrics-grid">
+          <div class="metric-card glass-panel">
+            <div class="metric-header">
+              <span class="metric-label">Active API Keys</span>
+            </div>
+            <div class="metric-value-row">
+              <span id="metric-active-keys" class="metric-number">0</span>
+              <span class="metric-capacity">/ <span id="metric-max-keys">100</span></span>
+            </div>
+            <div class="metric-footer">
+              <span id="metric-revoked-keys" class="metric-subtext">0 revoked</span>
+            </div>
+          </div>
+
+          <div class="metric-card glass-panel">
+            <div class="metric-header">
+              <span class="metric-label">Synthetic Sessions</span>
+            </div>
+            <div class="metric-value-row">
+              <span id="metric-active-sessions" class="metric-number">0</span>
+              <span class="metric-capacity">/ <span id="metric-max-sessions">1,000</span></span>
+            </div>
+            <div class="metric-footer">
+              <span id="metric-revoked-sessions" class="metric-subtext">0 revoked / expired</span>
+            </div>
+          </div>
+
+          <div class="metric-card glass-panel">
+            <div class="metric-header">
+              <span class="metric-label">Redis Limiter</span>
+            </div>
+            <div class="metric-value-row">
+              <span id="metric-redis-status" class="metric-number">Active</span>
+            </div>
+            <div class="metric-footer">
+              <span class="metric-subtext">Throttling & revocation cache</span>
+            </div>
+          </div>
+
+          <div class="metric-card glass-panel">
+            <div class="metric-header">
+              <span class="metric-label">Security Model</span>
+            </div>
+            <div class="metric-value-row">
+              <span class="metric-number">Enforced</span>
+            </div>
+            <div class="metric-footer">
+              <span class="metric-subtext">CSRF &bull; Origin &bull; Keyed HMAC</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs & Actions Bar -->
+        <div class="dashboard-controls-bar">
+          <nav class="tab-navigation" role="tablist">
+            <button id="tab-btn-keys" class="tab-button active" role="tab" aria-selected="true" aria-controls="pane-keys">
+              <span>API Keys</span>
+              <span id="badge-keys-count" class="tab-badge">0</span>
+            </button>
+            <button id="tab-btn-sessions" class="tab-button" role="tab" aria-selected="false" aria-controls="pane-sessions">
+              <span>Synthetic Sessions</span>
+              <span id="badge-sessions-count" class="tab-badge">0</span>
+            </button>
+            <button id="tab-btn-playground" class="tab-button" role="tab" aria-selected="false" aria-controls="pane-playground">
+              <span>Playground</span>
+            </button>
+            <button id="tab-btn-blueprint" class="tab-button" role="tab" aria-selected="false" aria-controls="pane-blueprint">
+              <span>Architecture</span>
+            </button>
+          </nav>
+
+          <div class="controls-actions">
+            <button id="btn-refresh-state" class="btn btn-secondary btn-sm" title="Refresh state">
+              <svg id="refresh-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              <span>Refresh</span>
+            </button>
+            <button id="btn-open-create-key" class="btn btn-primary btn-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>Create Key</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ================= PANE 1: API KEYS ================= -->
+        <div id="pane-keys" class="tab-pane active" role="tabpanel">
+          <div class="panel-card glass-panel">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">Demonstration API Keys</h2>
+                <p class="panel-subtitle">Stored exclusively as keyed HMAC-SHA256 digests. Raw secrets are revealed once at creation.</p>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Key Name</th>
+                    <th>Identifier / Prefix</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Revoked</th>
+                    <th class="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="keys-table-body">
+                  <!-- Populated dynamically -->
+                </tbody>
+              </table>
+            </div>
+
+            <div id="keys-empty-state" class="empty-state hidden">
+              <h3 class="empty-title">No API Keys</h3>
+              <p class="empty-description">Generate a demonstration API key to begin issuing synthetic application sessions.</p>
+              <button class="btn btn-secondary btn-sm btn-empty-action" type="button" onclick="document.getElementById('btn-open-create-key').click()">
+                Create First Key
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================= PANE 2: SYNTHETIC SESSIONS ================= -->
+        <div id="pane-sessions" class="tab-pane hidden" role="tabpanel">
+          <div class="panel-card glass-panel">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">Synthetic Application Sessions</h2>
+                <p class="panel-subtitle">Ephemeral sessions bound to demonstration API keys. Subjects are synthetic client labels.</p>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Session ID</th>
+                    <th>Owning API Key ID</th>
+                    <th>Synthetic Subject</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Expires</th>
+                    <th class="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="sessions-table-body">
+                  <!-- Populated dynamically -->
+                </tbody>
+              </table>
+            </div>
+
+            <div id="sessions-empty-state" class="empty-state hidden">
+              <h3 class="empty-title">No Active Sessions</h3>
+              <p class="empty-description">Use an API key or the Playground tab to issue synthetic application sessions.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================= PANE 3: INTERACTIVE PLAYGROUND ================= -->
+        <div id="pane-playground" class="tab-pane hidden" role="tabpanel">
+          <div class="playground-layout">
+            
+            <!-- Flow 1: Create Session -->
+            <div class="playground-card glass-panel">
+              <div class="card-step-badge">Step 01</div>
+              <h3 class="playground-card-title">Issue Synthetic Session</h3>
+              <p class="playground-card-desc">Call <code>POST /v1/sessions</code> using a valid demonstration API key secret.</p>
+
+              <form id="form-playground-create" class="playground-form">
+                <div class="form-group">
+                  <label for="play-api-key" class="form-label">API Key Secret</label>
+                  <input
+                    type="password"
+                    id="play-api-key"
+                    class="form-control"
+                    placeholder="sk_..."
+                    required
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label for="play-subject" class="form-label">Synthetic Subject</label>
+                  <input
+                    type="text"
+                    id="play-subject"
+                    class="form-control"
+                    value="demo-agent-synthetic-01"
+                    placeholder="synthetic-subject-id"
+                    required
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label for="play-ttl" class="form-label">TTL Duration</label>
+                  <select id="play-ttl" class="form-control">
+                    <option value="300">5 Minutes (300s)</option>
+                    <option value="900" selected>15 Minutes (900s - Default)</option>
+                    <option value="3600">1 Hour (3,600s - Max)</option>
+                  </select>
+                </div>
+
+                <button type="submit" id="btn-play-create" class="btn btn-primary btn-block">
+                  Issue Session Token
+                </button>
+              </form>
+
+              <!-- Session Creation Result Box -->
+              <div id="play-create-result" class="play-result-box hidden">
+                <div class="result-header">
+                  <span class="result-tag tag-success">201 CREATED</span>
+                  <button type="button" class="btn-copy-result" id="btn-copy-session-token" title="Copy raw session token">Copy Token</button>
+                </div>
+                <div class="code-preview" id="play-create-preview"></div>
+              </div>
+            </div>
+
+            <!-- Flow 2: Validate Session -->
+            <div class="playground-card glass-panel">
+              <div class="card-step-badge">Step 02</div>
+              <h3 class="playground-card-title">Validate Session Token</h3>
+              <p class="playground-card-desc">Call <code>POST /v1/sessions/validate</code> to verify token signature and key ownership.</p>
+
+              <form id="form-playground-validate" class="playground-form">
+                <div class="form-group">
+                  <label for="play-val-key" class="form-label">Owning API Key Secret</label>
+                  <input
+                    type="password"
+                    id="play-val-key"
+                    class="form-control"
+                    placeholder="sk_..."
+                    required
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label for="play-val-token" class="form-label">Session Token</label>
+                  <input
+                    type="text"
+                    id="play-val-token"
+                    class="form-control"
+                    placeholder="sess_..."
+                    required
+                  />
+                </div>
+
+                <button type="submit" id="btn-play-validate" class="btn btn-secondary btn-block">
+                  Validate Token
+                </button>
+              </form>
+
+              <!-- Session Validation Result Box -->
+              <div id="play-validate-result" class="play-result-box hidden">
+                <div class="result-header">
+                  <span id="play-validate-status-badge" class="result-tag tag-success">200 VALID</span>
+                </div>
+                <div class="code-preview" id="play-validate-preview"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================= PANE 4: AWS ARCHITECTURE BLUEPRINT ================= -->
+        <div id="pane-blueprint" class="tab-pane hidden" role="tabpanel">
+          <div class="panel-card glass-panel">
+            <div class="panel-card-header">
+              <div>
+                <h2 class="panel-title">AWS Architecture & Teardown Blueprint</h2>
+                <p class="panel-subtitle">Single-container ECS Fargate deployment topology provisioned and destroyed via Terraform.</p>
+              </div>
+            </div>
+
+            <div class="architecture-diagram-wrap">
+              <div class="arch-flow">
+                <div class="arch-node">
+                  <span class="node-badge">Public Edge</span>
+                  <h4>Route 53 &bull; CloudFront</h4>
+                  <p>TLS via ACM &bull; Edge distribution</p>
+                </div>
+                <div class="arch-arrow">&rarr;</div>
+                <div class="arch-node">
+                  <span class="node-badge">Firewall</span>
+                  <h4>AWS WAF &bull; ALB</h4>
+                  <p>Rate limits &bull; TLS termination</p>
+                </div>
+                <div class="arch-arrow">&rarr;</div>
+                <div class="arch-node">
+                  <span class="node-badge">Compute</span>
+                  <h4>ECS Fargate (Fastify)</h4>
+                  <p>Console UI &bull; Session endpoints</p>
+                </div>
+                <div class="arch-arrow">&rarr;</div>
+                <div class="arch-node">
+                  <span class="node-badge">Authoritative State</span>
+                  <h4>RDS PostgreSQL &bull; Redis</h4>
+                  <p>Cryptographic digests &bull; Throttling</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="blueprint-details-grid">
+              <div class="blueprint-item">
+                <h4>Ephemeral Lifetime Guarantee</h4>
+                <p>No customer records, user domains, or long-term identity tables are permitted. All resources and records exist exclusively for evaluation.</p>
+              </div>
+
+              <div class="blueprint-item">
+                <h4>Asynchronous Outbox & Worker</h4>
+                <p>Database state changes write to a transactional outbox. A background worker task consumes SQS events and writes redacted evidence to S3.</p>
+              </div>
+
+              <div class="blueprint-item">
+                <h4>AWS Secrets Manager & KMS</h4>
+                <p>Console operator codes and cryptographic salt keys are loaded directly from Secrets Manager. Tokens are stored only as HMAC digests.</p>
+              </div>
+
+              <div class="blueprint-item">
+                <h4>Complete Infrastructure Teardown</h4>
+                <p>A single <code>terraform destroy</code> command cleanly removes all VPCs, compute tasks, databases, caches, queues, and S3 evidence buckets.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- App Footer -->
+    <footer class="app-footer">
+      <div class="footer-content">
+        <span class="footer-text">AuthForge AWS Showcase Prototype &bull; Milestone M1/M2 Implementation</span>
+        <span class="footer-version">v0.1.0 (Strict Showcase Scope)</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ================= MODAL: CREATE API KEY ================= -->
+  <div id="modal-create-key" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-create-title">
+    <div class="modal-container glass-panel">
+      <div class="modal-header">
+        <h3 id="modal-create-title" class="modal-title">Create Demonstration API Key</h3>
+        <button type="button" class="btn-modal-close" id="btn-close-create-modal" aria-label="Close dialog">&times;</button>
+      </div>
+      <form id="form-create-key">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="input-key-name" class="form-label">Client Name / Description</label>
+            <input
+              type="text"
+              id="input-key-name"
+              class="form-control"
+              placeholder="e.g. backend-ingestion-worker"
+              maxlength="120"
+              required
+              autofocus
+            />
+            <p class="form-help">1 to 120 characters describing the synthetic client.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-create-key">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-create-key">
+            <span class="btn-text">Generate Key</span>
+            <span class="btn-spinner hidden"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: ONE-TIME KEY REVEAL ================= -->
+  <div id="modal-reveal-key" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-reveal-title">
+    <div class="modal-container glass-panel modal-lg">
+      <div class="modal-header">
+        <h3 id="modal-reveal-title" class="modal-title">API Key Created</h3>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning">
+          <span class="alert-icon">!</span>
+          <span class="alert-message">
+            <strong>Save this key now.</strong> Raw API keys are never stored in the database. Only an HMAC digest is retained.
+          </span>
+        </div>
+
+        <div class="reveal-secret-box">
+          <div class="secret-label">Secret API Key:</div>
+          <div class="secret-value-row">
+            <code id="reveal-secret-text" class="secret-code">sk_...</code>
+            <button type="button" id="btn-copy-revealed-key" class="btn btn-secondary btn-sm">Copy</button>
+          </div>
+        </div>
+
+        <div class="reveal-meta-details">
+          <div class="meta-item">
+            <span class="meta-label">Key Name</span>
+            <span id="reveal-meta-name" class="meta-value">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Key ID</span>
+            <span id="reveal-meta-id" class="meta-value font-mono">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Prefix</span>
+            <span id="reveal-meta-prefix" class="meta-value font-mono">-</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="btn-close-reveal-modal">I Have Saved This Key</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: CONFIRM REVOKE KEY ================= -->
+  <div id="modal-confirm-revoke" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-revoke-title">
+    <div class="modal-container glass-panel">
+      <div class="modal-header">
+        <h3 id="modal-revoke-title" class="modal-title">Revoke API Key</h3>
+        <button type="button" class="btn-modal-close" id="btn-close-revoke-modal" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-confirm-text">
+          Are you sure you want to revoke <strong id="revoke-key-name">-</strong>?
+        </p>
+        <div class="alert alert-danger">
+          <span class="alert-icon">!</span>
+          <span class="alert-message">
+            Revoking this key immediately invalidates it and terminates all active synthetic sessions created under it.
+          </span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="btn-cancel-revoke">Cancel</button>
+        <button type="button" class="btn btn-danger" id="btn-confirm-revoke-key">
+          <span class="btn-text">Revoke Key & Sessions</span>
+          <span class="btn-spinner hidden"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/console/app.js"></script>
+</body>
+</html>

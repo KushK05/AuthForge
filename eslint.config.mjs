@@ -1,4 +1,5 @@
 import eslint from "@eslint/js";
+import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
@@ -9,6 +10,14 @@ export default tseslint.config(
     ignores: ["dist/", "coverage/", "node_modules/"],
     rules: {
       "@typescript-eslint/consistent-type-imports": "error"
+    }
+  },
+  {
+    files: ["src/api/console/**/*.js"],
+    languageOptions: {
+      globals: {
+        ...globals.browser
+      }
     }
   }
 );

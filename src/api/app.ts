@@ -1,6 +1,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import {
@@ -24,6 +27,18 @@ declare module "fastify" {
     requestId: string;
   }
 }
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const consoleDir = join(__dirname, "console");
+
+const getConsoleAsset = (filename: string): string => {
+  const filePath = join(consoleDir, filename);
+  if (!existsSync(filePath)) {
+    throw notFound();
+  }
+  return readFileSync(filePath, "utf-8");
+};
 
 const cookieName = "authforge_console";
 
@@ -117,6 +132,47 @@ export const buildApi = (
       if (error instanceof ApplicationError) throw error;
       throw unavailableDependency();
     }
+  });
+
+  const serveConsoleHtml = async (_request: FastifyRequest, reply: FastifyReply) => {
+    const html = getConsoleAsset("index.html");
+    return reply
+      .header("Content-Type", "text/html; charset=utf-8")
+      .header("X-Content-Type-Options", "nosniff")
+      .header("X-Frame-Options", "DENY")
+      .header("Referrer-Policy", "strict-origin-when-cross-origin")
+      .header(
+        "Content-Security-Policy",
+        "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; script-src 'self' 'unsafe-inline'"
+      )
+      .send(html);
+  };
+
+  api.get("/", serveConsoleHtml);
+  api.get("/console", serveConsoleHtml);
+
+  api.get("/console/styles.css", async (_request, reply) => {
+    const css = getConsoleAsset("styles.css");
+    return reply
+      .header("Content-Type", "text/css; charset=utf-8")
+      .header("X-Content-Type-Options", "nosniff")
+      .send(css);
+  });
+
+  api.get("/console/app.js", async (_request, reply) => {
+    const js = getConsoleAsset("app.js");
+    return reply
+      .header("Content-Type", "application/javascript; charset=utf-8")
+      .header("X-Content-Type-Options", "nosniff")
+      .send(js);
+  });
+
+  api.get("/favicon.svg", async (_request, reply) => {
+    const svg = getConsoleAsset("favicon.svg");
+    return reply
+      .header("Content-Type", "image/svg+xml")
+      .header("X-Content-Type-Options", "nosniff")
+      .send(svg);
   });
 
   api.post("/v1/console/session", async (request, reply) => {

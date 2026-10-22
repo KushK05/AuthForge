@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "dev:api": "tsx watch src/api/server.ts",
+    "dev:ui": "tsx src/api/preview-server.ts",
     "dev:worker": "tsx watch src/worker/main.ts",
     "lint": "eslint .",
     "migrate": "tsx src/platform/database/migrate.ts",

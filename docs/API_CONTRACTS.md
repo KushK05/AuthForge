@@ -50,6 +50,10 @@ Missing or invalid proof returns `403 invalid_csrf`. `GET` routes still enforce 
 
 | Method and path | Auth | Contract |
 | --- | --- | --- |
+| `GET /` or `GET /console` | none | Serves the developer console HTML SPA with security headers (`CSP`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`). |
+| `GET /console/styles.css` | none | Serves developer console stylesheet. |
+| `GET /console/app.js` | none | Serves developer console client script. |
+| `GET /favicon.svg` | none | Serves developer console SVG favicon. |
 | `POST /v1/console/session` | none | `{access_code}`. Creates a short-lived console session and returns `{csrf_token}` with `Cache-Control: no-store`. Repeated failures use Redis-backed rate limits and the same `401 invalid_console_access` response. |
 | `DELETE /v1/console/session` | console cookie + CSRF | Revokes the current console session, clears the cookie, and returns `204`. |
 | `GET /v1/console/state` | console cookie | Returns API-key summaries, session summaries, and redacted showcase-event status needed by the dashboard. |
