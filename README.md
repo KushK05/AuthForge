@@ -1,48 +1,74 @@
 # AuthForge
 
-AuthForge is a multi-tenant Authentication-as-a-Service platform for developers. It is a deliberately scoped, Clerk-like project that lets a developer create a tenant project, configure credentials and redirect URLs, and use AuthForge for users, password authentication, email verification, password reset, sessions, JSON Web Tokens (JWTs), refresh-token rotation, roles, permissions, and audit trails.
+AuthForge is a temporary authentication showcase with three product capabilities:
 
-The initial production architecture is a modular monolith API plus event-driven background workers. It is not a microservice system. Boundaries are enforced in code and in the database so that the system can be split later only when evidence requires it.
+- A small developer console.
+- Creation, listing, and revocation of API keys.
+- Creation, validation, listing, and revocation of application sessions.
+
+It is not a production identity platform. It has no end-user account system and accepts only synthetic demonstration data.
+
+## Evaluation requirement
+
+The product surface is intentionally small, but the deployment must demonstrate the previously selected AWS services:
+
+- Route 53, CloudFront, ACM, an Application Load Balancer, and AWS WAF.
+- Amazon ECS on Fargate for one API task and one worker task.
+- Amazon RDS for PostgreSQL and Amazon ElastiCache for Redis.
+- Amazon SQS with a dead-letter queue and Amazon SES in sandbox or simulator mode.
+- Amazon S3, AWS KMS, AWS Secrets Manager, Amazon CloudWatch, Amazon ECR, and IAM.
+- Terraform for repeatable provisioning and complete teardown.
+
+RDS, Redis, S3, queues, logs, and other resources may contain synthetic showcase data only. Nothing is retained after the temporary AWS environment is destroyed. No real user or business data may be entered.
+
+## Current repository status
+
+M0 is complete: the application source, configuration, dependencies, migrations, and tests describe only the developer console, API keys, application sessions, showcase events, and required AWS adapters. Redis remains in the local topology for later console throttling and validation cache. Terraform still provisions the temporary evaluation environment and will be completed in later milestones.
+
+## Explicitly excluded
+
+- Developer organizations, teams, tenant projects, environments, and billing.
+- End-user registration, passwords, email verification, password reset, profiles, roles, and permissions.
+- Social login, MFA, refresh-token families, public JWT/JWKS infrastructure, and user directories.
+- Real recipient email, real personal data, production traffic, long-term retention, backups, and disaster recovery.
+- Microservices, multi-region operation, and independent domain deployments.
+
+## Demonstration flow
+
+1. Open the developer console and enter the deployment-scoped console access code.
+2. Create an API key and copy its secret from the one-time response.
+3. Use the API key to create a session for a synthetic subject such as `demo-user-1`.
+4. Validate the returned session token.
+5. Revoke the session or API key and show that subsequent validation fails.
+6. Show the synthetic lifecycle event moving through SQS to the worker, CloudWatch, S3, and SES sandbox integration.
+7. Destroy the Terraform environment and verify that no AuthForge data resource remains.
 
 ## Documentation map
 
 | File | Authority |
 | --- | --- |
-| [AGENTS.md](AGENTS.md) | Mandatory operating rules for coding agents and contributors. |
-| [SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md) | Product scope, request flows, capacity assumptions, failure modes, and non-functional requirements. |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module boundaries, dependency rules, runtime topology, and architecture decision records. |
-| [API_CONTRACTS.md](docs/API_CONTRACTS.md) | Versioned HTTP contract, error model, auth schemes, and idempotency requirements. |
-| [DATA_MODEL.md](docs/DATA_MODEL.md) | PostgreSQL ownership model, tables, constraints, and migration rules. |
-| [SECURITY.md](docs/SECURITY.md) | Threat model, token, credential, tenancy, privacy, and operational-security requirements. |
-| [AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md) | AWS topology, infrastructure as code, environments, deployment pipeline, observability, and scale path. |
-| [ROADMAP.md](docs/ROADMAP.md) | Ordered implementation and scaling milestones with exit criteria. |
-| [TESTING.md](docs/TESTING.md) | Test pyramid, mandatory end-to-end journeys, fixtures, and release gates. |
-| [DECISIONS.md](docs/DECISIONS.md) | Decision records. Amend this file before intentionally changing a foundational choice. |
+| [AGENTS.md](AGENTS.md) | Mandatory scope and working rules for agents and contributors. |
+| [SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md) | Product actors, flows, invariants, and AWS interactions. |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | API, worker, module, storage, and event boundaries. |
+| [API_CONTRACTS.md](docs/API_CONTRACTS.md) | Console, API-key, and session HTTP contracts. |
+| [DATA_MODEL.md](docs/DATA_MODEL.md) | Minimal PostgreSQL model and temporary retention rules. |
+| [SECURITY.md](docs/SECURITY.md) | Synthetic-data restrictions and AWS safeguards. |
+| [AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md) | Required AWS topology, smoke test, and teardown path. |
+| [ROADMAP.md](docs/ROADMAP.md) | Narrow implementation sequence and exit criteria. |
+| [TESTING.md](docs/TESTING.md) | Unit, integration, contract, end-to-end, and teardown checks. |
+| [DECISIONS.md](docs/DECISIONS.md) | Architecture decision history and active scope decision. |
 
-## v1 capabilities
+## Local target
 
-- Developer organizations, projects, environments, redirect URLs, publishable keys, and secret API keys.
-- Email/password sign-up and sign-in, verified-email gating, password reset, and explicit sign-out.
-- Browser sessions with short-lived access JWTs and opaque, rotating refresh tokens.
-- Project-scoped RBAC: roles contain permissions and memberships grant roles to users.
-- Email delivery through SQS-backed workers and Amazon SES.
-- Redis-backed, tenant-aware rate limiting; PostgreSQL is always the source of truth.
-- Immutable application audit events, exportable to S3 on a retention schedule.
+Local development may use Docker Compose for PostgreSQL, Redis, and LocalStack equivalents of SQS, SES, S3, KMS, and Secrets Manager. The expected path is:
 
-## Explicit v1 non-goals
+```bash
+npm install
+cp .env.example .env
+docker compose up -d
+npm run migrate
+npm run dev:api
+npm run dev:worker
+```
 
-- Social/OIDC login, passkeys, MFA, SCIM, SAML, billing, and a public SDK are deferred.
-- AuthForge does not store application business data beyond identity and authorization metadata.
-- No tenant-configurable JWT signing algorithms, arbitrary webhooks, or per-tenant database instances.
-- No independently deployed domain microservices.
-
-## Starting locally
-
-1. Use the service definitions in the future `compose.yaml` to run PostgreSQL, Redis, LocalStack or a compatible AWS emulator, the API, and the worker.
-2. Apply migrations before starting the API. Seed a single developer organization, project, and local key only through a development-only seed command.
-3. Use a fixed local issuer, for example `http://localhost:8080`, and a local email sink. Never send email to real addresses from local development.
-4. Keep `.env.example` complete but secret-free. Load actual development secrets from an untracked `.env` file or the approved secret manager integration.
-
-After copying `.env.example` to `.env`, set a unique `API_KEY_HASH_KEY` with at least 32 characters. Once the dependencies have started and migrations have run, execute `npm run seed:development` exactly once to create the local bootstrap project and reveal its initial secret key. This command refuses non-development environments and never re-reveals a prior bootstrap key.
-
-Implementation order, environment variables, and verification gates are specified in [ROADMAP.md](docs/ROADMAP.md), [AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md), and [TESTING.md](docs/TESTING.md).
+Do not claim this path works until the implementation, Compose file, environment template, migrations, and the journey in [TESTING.md](docs/TESTING.md) are aligned and verified.

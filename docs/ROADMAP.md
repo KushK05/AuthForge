@@ -1,43 +1,43 @@
-# Roadmap
+# Prototype roadmap
 
-Each milestone is complete only when its exit criteria and applicable tests pass. Build vertical slices in this order; do not start later capabilities solely because their tables can be created early.
+Build the smallest complete product and AWS evaluation path. A milestone is complete only when its exit criteria and applicable tests pass.
 
-## M0 - foundation
+## M0 - narrow the domain
 
-Deliver repository layout, formatter/linter, configuration validation, local Compose stack, migration tool, typed error model, request IDs, structured redacted logging, health endpoints, CI skeleton, and IaC skeleton.
+Remove organizations, tenant projects, environments, users, passwords, email verification, password reset, roles, permissions, JWT/JWKS, refresh-token families, and durable audit-product requirements. Keep TypeScript, Fastify, PostgreSQL migrations, Redis, the API/worker topology, and AWS adapters needed by the evaluation.
 
-Exit criteria: a new developer can start dependencies, migrate an empty database, run API and worker, and execute one smoke test without AWS access.
+Exit criteria: docs, source layout, configuration, dependencies, and tests describe only the console, API keys, sessions, showcase events, and required AWS services.
 
-## M1 - developer tenancy and keys
+## M1 - console and API keys
 
-Implement developer organizations, projects, environments, publishable keys, scoped secret keys, redirect URL allowlist, and audit append. Enforce project-scoped data access from the first query.
+Implement access-code exchange, PostgreSQL console sessions, explicit CSRF and Origin checks, Redis login throttling, API-key creation, one-time reveal, listing, authentication, revocation, and redacted logging.
 
-Exit criteria: raw secret key is shown exactly once; a key cannot read or mutate another project; every management mutation creates an audit event.
+Exit criteria: console protection and API-key lifecycle pass unit, integration, contract, security, and end-to-end tests. Secret responses assert `Cache-Control: no-store`.
 
-## M2 - identity and email lifecycle
+## M2 - sessions
 
-Implement sign-up, Argon2id password storage, verification tokens, password-reset request/confirm, durable outbox, SQS worker, SES adapter, DLQ, idempotent delivery, and safe generic responses.
+Implement session creation, one-time token reveal, validation, listing, expiry, API-key ownership, console revocation, API-key cascade revocation, and short-lived Redis caching.
 
-Exit criteria: retries cause no duplicate users or emails beyond documented resend behavior; expired or consumed tokens fail safely; all session invalidation rules are tested.
+Exit criteria: expiry, wrong-key validation, both revocation paths, Redis loss, and PostgreSQL authority are tested.
 
-## M3 - sessions and authorization
+## M3 - AWS event path
 
-Implement sign-in, session records, KMS-backed JWT signing and JWKS, opaque refresh rotation/replay handling, sign-out, roles, permissions, memberships, and `GET /me`.
+Implement transactional outbox records, SQS publishing, idempotent worker consumption, DLQ behavior, SES sandbox invocation, redacted S3 artifacts, and CloudWatch metrics.
 
-Exit criteria: JWT validation passes independent verifier tests; refresh replay revokes family; disabled users cannot refresh; privilege changes are effective within access-token lifetime or explicit revocation policy.
+Exit criteria: each required AWS integration has automated adapter coverage and a visible synthetic end-to-end result. No raw credential or subject reaches an event payload or artifact.
 
-## M4 - production readiness
+## M4 - temporary AWS environment
 
-Provision development, staging, and production environments through IaC. Add ECS, ECR, RDS, Redis, SQS/DLQ, SES, WAF, KMS, Secrets Manager, CloudWatch dashboards/alarms, backup restore exercise, CI/CD promotion, load test, and security review.
+Use Terraform to provision Route 53, CloudFront, ACM, ALB, WAF, ECS Fargate API and worker, ECR, RDS PostgreSQL, ElastiCache Redis, SQS and DLQ, SES sandbox configuration, S3, KMS, Secrets Manager, CloudWatch, IAM, and required networking.
 
-Exit criteria: staging deployment is repeatable from an image digest; a restore drill succeeds; alarms can be triggered in a controlled test; a 10x burst load test meets stated objectives.
+Exit criteria: the full remote journey passes, the dashboard and DLQ demonstration are visible, only synthetic data exists, and the smallest practical resource sizes are documented.
 
-## M5 - hosted developer experience
+## M5 - showcase and teardown
 
-Add a minimal developer console, API documentation/OpenAPI publishing, audit search/export, key rotation UX, and usage visibility. Keep console authentication separate from end-user project authentication.
+Rehearse the exact demonstration, capture required evaluation evidence, present it, run Terraform destroy, and verify that no AuthForge database, cache, queue, bucket, secret, task, load balancer, distribution, log group, image, or retained snapshot remains.
 
-Exit criteria: a developer can create a project, copy a key once, configure redirect URLs, integrate the documented sign-in flow, inspect an audit event, and revoke a key without operator help.
+Exit criteria: teardown verification passes and the final report states that no real data was used or retained.
 
-## Deferred backlog
+## Stop conditions
 
-Prioritize after v1 only with a written use case and threat analysis: OAuth/OIDC providers, MFA, passkeys, organization membership for end users, webhooks, SDKs, SAML/SCIM, billing, custom domains, and regional deployment. Each item may alter token, data, or tenancy assumptions and must be assessed before implementation.
+The prototype is complete after M5. Do not add real user management, non-simulator email, more product features, another deployable service, another AWS product, long-term data retention, multi-region operation, or production hardening without a new scope decision.
