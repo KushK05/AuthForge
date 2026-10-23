@@ -12,15 +12,18 @@ Redis and S3 are part of the AWS evaluation but are not alternate authorities. R
 | --- | --- |
 | `showcase_console_sessions` | `id`, `token_digest`, `csrf_digest`, `created_at`, `expires_at`, `revoked_at`; no developer identity fields. |
 | `showcase_api_keys` | `id`, `name`, `prefix`, `secret_digest`, `created_at`, `revoked_at`; unique digest and non-secret prefix. |
+| `showcase_users` | `id`, normalized approved demo email, Argon2id password hash, `created_at`, `disabled_at`; no profile fields. |
+| `showcase_user_sessions` | `id`, `user_id`, token and CSRF digests, `created_at`, `expires_at`, `revoked_at`; browser-authentication session. |
 | `showcase_sessions` | `id`, `api_key_id`, `subject`, `token_digest`, `created_at`, `expires_at`, `revoked_at`; unique digest and indexed ownership. |
 | `showcase_outbox_events` | `id`, `event_type`, `event_version`, redacted JSON payload, `created_at`, `published_at`. |
 | `showcase_worker_inbox` | Unique `(event_id, consumer_name)` completion records that prevent duplicate worker side effects after successful processing. |
 
-Do not add users, emails, passwords, organizations, projects, environments, roles, permissions, refresh tokens, profile fields, or durable audit tables.
+Do not add organizations, projects, environments, roles, permissions, refresh tokens, profile fields, or durable audit tables. User records are limited to approved demo identities and exist only until teardown.
 
 ## Sensitive-field rules
 
-- API-key, session-token, console-cookie, and CSRF values use cryptographically secure randomness.
+- API-key, session-token, console-cookie, user-session cookie, and CSRF values use cryptographically secure randomness.
+- Passwords are stored only as Argon2id hashes. User email is restricted to the `@authforge.demo` demonstration domain.
 - PostgreSQL stores only keyed digests of raw credential values.
 - Prefixes and names are display metadata and must not contain real secrets or personal data.
 - The raw API key and session token appear only in their creation response.

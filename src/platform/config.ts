@@ -3,6 +3,9 @@ import { existsSync } from "node:fs";
 import { z } from "zod";
 
 const environmentSchema = z.enum(["development", "test", "staging", "production"]);
+const optionalUrl = z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional());
+const optionalString = z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional());
+const optionalEmail = z.preprocess((value) => value === "" ? undefined : value, z.string().email().optional());
 
 const configurationSchema = z.object({
   NODE_ENV: environmentSchema.default("development"),
@@ -12,12 +15,12 @@ const configurationSchema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
   AWS_REGION: z.string().min(1).default("us-east-1"),
-  AWS_SQS_ENDPOINT_URL: z.string().url().optional(),
-  SHOWCASE_QUEUE_URL: z.string().url().optional(),
-  SHOWCASE_S3_BUCKET: z.string().min(1).optional(),
-  SHOWCASE_S3_KMS_KEY_ID: z.string().min(1).optional(),
-  SHOWCASE_SES_FROM_EMAIL: z.string().email().optional(),
-  SHOWCASE_SES_SIMULATOR_EMAIL: z.string().email().optional(),
+  AWS_SQS_ENDPOINT_URL: optionalUrl,
+  SHOWCASE_QUEUE_URL: optionalUrl,
+  SHOWCASE_S3_BUCKET: optionalString,
+  SHOWCASE_S3_KMS_KEY_ID: optionalString,
+  SHOWCASE_SES_FROM_EMAIL: optionalEmail,
+  SHOWCASE_SES_SIMULATOR_EMAIL: optionalEmail,
   CONSOLE_ACCESS_CODE: z.string().min(16),
   CREDENTIAL_HASH_KEY: z.string().min(32),
   CONSOLE_ORIGIN: z.string().url().default("http://127.0.0.1:8080"),
@@ -27,6 +30,9 @@ const configurationSchema = z.object({
   MAX_API_KEYS: z.coerce.number().int().min(1).max(10_000).default(100),
   MAX_SESSIONS: z.coerce.number().int().min(1).max(100_000).default(1_000),
   MAX_CONSOLE_SESSIONS: z.coerce.number().int().min(1).max(10_000).default(20),
+  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
+  KMS_JWT_SIGNING_KEY_ID: optionalString,
+  AWS_KMS_ENDPOINT_URL: optionalUrl,
   SECURE_COOKIES: z.enum(["true", "false"]).default("false")
 });
 
@@ -53,6 +59,9 @@ export type AppConfig = Readonly<{
   maxApiKeys: number;
   maxSessions: number;
   maxConsoleSessions: number;
+  accessTokenTtlSeconds: number;
+  kmsJwtSigningKeyId?: string;
+  awsKmsEndpointUrl?: string;
   secureCookies: boolean;
 }>;
 
@@ -91,6 +100,9 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     maxApiKeys: parsed.data.MAX_API_KEYS,
     maxSessions: parsed.data.MAX_SESSIONS,
     maxConsoleSessions: parsed.data.MAX_CONSOLE_SESSIONS,
+    accessTokenTtlSeconds: parsed.data.ACCESS_TOKEN_TTL_SECONDS,
+    ...(parsed.data.KMS_JWT_SIGNING_KEY_ID ? { kmsJwtSigningKeyId: parsed.data.KMS_JWT_SIGNING_KEY_ID } : {}),
+    ...(parsed.data.AWS_KMS_ENDPOINT_URL ? { awsKmsEndpointUrl: parsed.data.AWS_KMS_ENDPOINT_URL } : {}),
     secureCookies: parsed.data.SECURE_COOKIES === "true"
   };
 };

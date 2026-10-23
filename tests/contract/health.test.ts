@@ -21,6 +21,7 @@ const config: AppConfig = {
   maxApiKeys: 10,
   maxSessions: 20,
   maxConsoleSessions: 20,
+  accessTokenTtlSeconds: 300,
   secureCookies: false
 };
 const api = buildApi(config, new MemoryShowcaseStore());

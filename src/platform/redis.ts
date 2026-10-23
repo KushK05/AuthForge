@@ -108,7 +108,7 @@ export const createRedisClient = (redisUrl: string): Redis => {
   return new Redis(redisUrl, {
     maxRetriesPerRequest: 1,
     connectTimeout: 2_000,
-    lazyConnect: true,
+    lazyConnect: false,
     enableOfflineQueue: false
   });
 };

@@ -1,11 +1,10 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import {
   ApplicationError,
-  capacityExceeded,
   invalidCredentials,
   invalidRequest,
   notFound,
@@ -16,6 +15,11 @@ import type { AppConfig } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
 import { ApiKeyService } from "../modules/api-keys/api-key-service.js";
 import { ConsoleService } from "../modules/developer-console/console-service.js";
+import { type AccessTokenSigner, createAccessTokenSigner } from "../modules/sessions/access-token-signer.js";
+import { type IssuedSession, SessionService } from "../modules/sessions/session-service.js";
+import { UserService } from "../modules/users/user-service.js";
+import { authClient, authPage } from "./auth-page.js";
+import { dashboardClient, dashboardPage } from "./dashboard-page.js";
 import { type ConsoleRateLimiter, MemoryConsoleRateLimiter } from "../platform/redis.js";
 import type { ApiKeyRecord, ApplicationSessionRecord, ConsoleSessionRecord, ShowcaseStore } from "../platform/store.js";
 
@@ -26,13 +30,13 @@ declare module "fastify" {
 }
 
 const cookieName = "authforge_console";
+const userCookieName = "authforge_user";
 
 const parseCookie = (header: string | undefined, name: string): string | undefined => {
   const pair = header?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
   return pair?.slice(name.length + 1);
 };
 
-const rawToken = (prefix: string): string => `${prefix}_${randomBytes(32).toString("base64url")}`;
 const digest = (value: string, config: AppConfig): Buffer => hashOpaqueSecret(value, config.credentialHashKey);
 const iso = (value: Date): string => value.toISOString();
 
@@ -45,6 +49,14 @@ const publicSession = (record: ApplicationSessionRecord) => ({
   ...(record.revokedAt ? { revoked_at: iso(record.revokedAt) } : {})
 });
 
+const issuedSessionBody = (issued: IssuedSession) => ({
+  ...publicSession(issued.session),
+  token: issued.token,
+  access_token: issued.accessToken,
+  token_type: "Bearer",
+  expires_in: issued.accessTokenExpiresIn
+});
+
 const getOrigin = (request: FastifyRequest): string | undefined => {
   const origin = request.headers.origin;
   return typeof origin === "string" ? origin : undefined;
@@ -54,11 +66,14 @@ export const buildApi = (
   config: AppConfig,
   store: ShowcaseStore,
   rateLimiter: ConsoleRateLimiter = new MemoryConsoleRateLimiter(),
-  logger = new Logger(config.logLevel, config.environment)
+  logger = new Logger(config.logLevel, config.environment),
+  signer: AccessTokenSigner = createAccessTokenSigner(config)
 ): FastifyInstance => {
   const api = Fastify({ logger: false });
   const consoleService = new ConsoleService(config, store, rateLimiter);
   const apiKeyService = new ApiKeyService(config, store);
+  const sessionService = new SessionService(config, store, signer);
+  const userService = new UserService(config, store);
 
   api.addHook("onRequest", async (request, reply) => {
     const supplied = request.headers["x-request-id"];
@@ -108,13 +123,36 @@ export const buildApi = (
   };
 
   api.get("/health/live", async () => ({ status: "ok" }));
+  api.get("/", async (_request, reply) => {
+    reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+    reply.header("Cache-Control", "no-store");
+    return reply.type("text/html; charset=utf-8").send(authPage);
+  });
+  api.get("/console", async (_request, reply) => { reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"); reply.header("Cache-Control", "no-store"); return reply.type("text/html; charset=utf-8").send(dashboardPage); });
+  api.get("/dashboard.js", async (_request, reply) => {
+    reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'");
+    reply.header("Cache-Control", "no-store");
+    return reply.type("application/javascript; charset=utf-8").send(dashboardClient);
+  });
+  api.get("/auth.js", async (_request, reply) => { reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"); reply.header("Cache-Control", "no-store"); return reply.type("application/javascript; charset=utf-8").send(`${authClient};document.head.insertAdjacentHTML('beforeend','<style>.layout>section:first-child:before{display:none}@media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr);gap:46px}}@media(max-width:520px){.layout{gap:34px}.layout>section:first-child{padding:32px 0 34px}.layout>section:first-child:before{display:none}h1{font-size:clamp(43px,13vw,54px)}.lead{margin:20px 0 28px}.proof{gap:15px}.card{padding:24px;box-shadow:10px 10px 0 #182c36}}</style>');`); });
   api.get("/health/ready", async (_request, reply) => {
     try {
       await store.ready();
       await rateLimiter.ready();
+      await signer.jwks();
       return reply.send({ status: "ok" });
     } catch (error) {
       if (error instanceof ApplicationError) throw error;
+      throw unavailableDependency();
+    }
+  });
+
+  api.get("/.well-known/jwks.json", async (_request, reply) => {
+    try {
+      const keys = await signer.jwks();
+      reply.header("Cache-Control", "public, max-age=300");
+      return reply.send(keys);
+    } catch {
       throw unavailableDependency();
     }
   });
@@ -127,6 +165,37 @@ export const buildApi = (
     reply.header("Set-Cookie", `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=900${secure}`);
     reply.header("Cache-Control", "no-store");
     return reply.send({ csrf_token: csrfToken });
+  });
+
+  const userCookie = (token: string, maxAge: number): string => `${userCookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.secureCookies ? "; Secure" : ""}`;
+  api.post("/v1/auth/register", async (request, reply) => {
+    const body = z.object({ email: z.string().max(254), password: z.string().max(256) }).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid registration request");
+    const issued = await userService.register(body.data.email, body.data.password);
+    reply.header("Set-Cookie", userCookie(issued.token, 3600)); reply.header("Cache-Control", "no-store");
+    return reply.status(201).send({ user: { id: issued.user.id, email: issued.user.email }, csrf_token: issued.csrfToken });
+  });
+  api.post("/v1/auth/login", async (request, reply) => {
+    const body = z.object({ email: z.string().max(254), password: z.string().max(256) }).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid sign-in request");
+    const issued = await userService.login(body.data.email, body.data.password);
+    reply.header("Set-Cookie", userCookie(issued.token, 3600)); reply.header("Cache-Control", "no-store");
+    return reply.send({ user: { id: issued.user.id, email: issued.user.email }, csrf_token: issued.csrfToken });
+  });
+  api.get("/v1/auth/me", async (request, reply) => {
+    try {
+      const current = await userService.authenticate(parseCookie(request.headers.cookie, userCookieName));
+      return { user: { id: current.user.id, email: current.user.email } };
+    } catch (error) {
+      if (error instanceof ApplicationError && error.code === "invalid_credentials") return reply.status(204).send();
+      throw error;
+    }
+  });
+  api.delete("/v1/auth/session", async (request, reply) => {
+    const current = await userService.authenticate(parseCookie(request.headers.cookie, userCookieName));
+    const csrf = typeof request.headers["x-csrf-token"] === "string" ? request.headers["x-csrf-token"] : undefined;
+    await userService.verifyCsrf(current.session, csrf); await store.revokeUserSession(current.session.id, new Date());
+    reply.header("Set-Cookie", userCookie("", 0)); return reply.status(204).send();
   });
 
   api.delete("/v1/console/session", async (request, reply) => {
@@ -171,20 +240,18 @@ export const buildApi = (
       ttl_seconds: z.coerce.number().int().min(30).max(config.maxSessionTtlSeconds).optional()
     }).strict().safeParse(request.body);
     if (!body.success) throw invalidRequest("Invalid session request");
-    if (await store.countSessions() >= config.maxSessions) throw capacityExceeded();
-    const token = rawToken("sess");
-    const createdAt = new Date();
-    const record: ApplicationSessionRecord = {
-      id: randomUUID(),
-      apiKeyId: apiKey.id,
-      subject: body.data.subject,
-      tokenDigest: digest(token, config),
-      createdAt,
-      expiresAt: new Date(createdAt.getTime() + (body.data.ttl_seconds ?? config.defaultSessionTtlSeconds) * 1_000)
-    };
-    await store.createSession(record);
+    const issued = await sessionService.create(apiKey, body.data.subject, body.data.ttl_seconds);
     reply.header("Cache-Control", "no-store");
-    return reply.status(201).send({ ...publicSession(record), token });
+    return reply.status(201).send(issuedSessionBody(issued));
+  });
+
+  api.post("/v1/sessions/refresh", async (request, reply) => {
+    const apiKey = await requireApiKey(request);
+    const body = z.object({ token: z.string().min(1).max(512) }).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid session refresh request");
+    const issued = await sessionService.refresh(apiKey, body.data.token);
+    reply.header("Cache-Control", "no-store");
+    return reply.send(issuedSessionBody(issued));
   });
 
   api.post("/v1/sessions/validate", async (request) => {

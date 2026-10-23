@@ -28,7 +28,8 @@ This is a small modular application, not a microservice system. The API and work
 | --- | --- | --- |
 | `developer-console` | Static console UI, access-code exchange, CSRF, and console session | Developer accounts, organizations, teams, billing |
 | `api-keys` | Create, list, authenticate, and revoke demonstration API keys | Projects, environments, user permissions |
-| `sessions` | Create, validate, list, expire, and revoke sessions for synthetic subjects | Users, passwords, roles, refresh families |
+| `users` | Register and authenticate approved demo users with Argon2id password hashes and short browser sessions | Public onboarding, profiles, email, roles, refresh families |
+| `sessions` | Create, validate, list, expire, and revoke sessions for synthetic subjects or approved demo users | Roles, refresh families |
 | `showcase-events` | Outbox publication, SQS handling, SES simulator call, and redacted S3 artifact | Real notifications, business workflows, durable audit product |
 | `shared` | Configuration, clock, IDs, errors, secret utilities, database and AWS ports | Product workflows |
 
@@ -36,7 +37,7 @@ Modules communicate through application services and narrow repository interface
 
 ## State ownership
 
-PostgreSQL is authoritative while the temporary environment exists. It stores console sessions, API-key metadata and digests, application sessions, outbox events, and worker deduplication records.
+PostgreSQL is authoritative while the temporary environment exists. It stores console sessions, approved demo users and their browser sessions, API-key metadata and digests, application sessions, outbox events, and worker deduplication records.
 
 Redis is disposable. It stores console-login rate limits, short-lived credential validation cache, and revocation hints. A Redis loss may reduce performance or force conservative rejection, but it must not grant access or lose authoritative state.
 

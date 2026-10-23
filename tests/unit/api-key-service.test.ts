@@ -21,6 +21,7 @@ const testConfig: AppConfig = {
   maxApiKeys: 3,
   maxSessions: 20,
   maxConsoleSessions: 20,
+  accessTokenTtlSeconds: 300,
   secureCookies: false
 };
 

@@ -6,10 +6,10 @@ When documents conflict, resolve them in this order: `docs/SECURITY.md`, `docs/A
 
 ## Non-negotiable product scope
 
-- Support only a developer console, API-key lifecycle, and application-session lifecycle.
+- Support a hosted demo-user registration and sign-in flow alongside the developer console, API-key lifecycle, and application-session lifecycle.
 - Use one deployment-scoped console operator. Do not build developer accounts or organization management.
-- Sessions use synthetic subject identifiers supplied by the demo client. Do not create a user domain.
-- Do not add registration, passwords, email verification, password reset, profiles, roles, permissions, social login, MFA, billing, or long-lived user identity.
+- Sessions use synthetic subject identifiers or approved demo-user identifiers supplied by the demo client.
+- Approved `@authforge.demo` users may register and sign in with Argon2id password hashes held only for the demo lifetime. Do not add public onboarding, email verification, password reset, profiles, roles, permissions, social login, MFA, billing, or long-lived user identity.
 - Never use real personal, customer, or business data.
 
 ## Non-negotiable AWS evaluation architecture
@@ -17,7 +17,7 @@ When documents conflict, resolve them in this order: `docs/SECURITY.md`, `docs/A
 - Build one API and one worker from the same TypeScript and Fastify codebase.
 - Deploy the API and worker on ECS Fargate from images in ECR.
 - Route public traffic through Route 53, CloudFront, ACM, an Application Load Balancer, and AWS WAF.
-- Use RDS PostgreSQL for temporary authoritative API-key and session records.
+- Use RDS PostgreSQL for temporary authoritative user, API-key, and session records.
 - Use ElastiCache Redis only for rate limits, short-lived validation cache, and revocation hints.
 - Use SQS with a DLQ for synthetic lifecycle events. The worker writes redacted event artifacts to S3 and exercises SES only in sandbox or simulator mode.
 - Use KMS, Secrets Manager, CloudWatch, IAM, and Terraform as specified in `docs/AWS_DEPLOYMENT.md`.
@@ -35,7 +35,8 @@ The AWS services are evaluation requirements. Do not remove them merely because 
 
 ## Implementation rules
 
-- Generate API keys and session tokens with cryptographically secure randomness.
+- Generate API keys, browser sessions, and session tokens with cryptographically secure randomness.
+- Hash demo-user passwords with Argon2id and store only the hash.
 - Store only keyed digests of raw API keys and session tokens. Return each raw secret only when created.
 - Never log access codes, authorization headers, cookies, raw API keys, raw session tokens, or secret-bearing request bodies.
 - Authenticate console routes with one deployment-scoped access code stored in Secrets Manager.
@@ -52,4 +53,4 @@ Run the smallest relevant unit and integration tests while working, then the com
 
 ## When to stop and ask
 
-Ask before adding real user data, passwords, non-simulator email, data retention after teardown, a public production commitment, another deployable service, another database, another queue, or an AWS service outside the documented evaluation set. Surface uncertainty explicitly.
+Ask before adding real user data, non-simulator email, data retention after teardown, a public production commitment, another deployable service, another database, another queue, or an AWS service outside the documented evaluation set. Surface uncertainty explicitly.

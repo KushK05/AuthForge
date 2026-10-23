@@ -4,13 +4,14 @@
 
 The base path is `/v1`. JSON uses `application/json`, timestamps use ISO-8601 UTC, and IDs are opaque strings. Every response includes `X-Request-Id`. Responses containing raw secrets include `Cache-Control: no-store`.
 
-There are three credentials:
+There are four credentials:
 
 - Console access code: stored in Secrets Manager and exchanged for a short-lived, HTTP-only console cookie.
 - Secret API key: `Authorization: Bearer sk_<value>` for session-management endpoints.
 - Session token: an opaque value returned once when a session is created and passed to the validation endpoint body.
+- Demo-user browser session: an HTTP-only cookie created through hosted registration or sign-in.
 
-The prototype does not issue JWTs, refresh tokens, publishable keys, or user credentials.
+The prototype does not support public onboarding, email verification, password reset, social login, MFA, or user roles. Registration accepts only approved `@authforge.demo` addresses.
 
 ## Error model
 
@@ -54,6 +55,17 @@ Missing or invalid proof returns `403 invalid_csrf`. `GET` routes still enforce 
 | `DELETE /v1/console/session` | console cookie + CSRF | Revokes the current console session, clears the cookie, and returns `204`. |
 | `GET /v1/console/state` | console cookie | Returns API-key summaries, session summaries, and redacted showcase-event status needed by the dashboard. |
 | `DELETE /v1/console/sessions/{session_id}` | console cookie + CSRF | Revokes any application session selected in the console and returns `204`; repeated revocation also returns `204`. |
+
+## Hosted demo-user endpoints
+
+| Method and path | Auth | Contract |
+| --- | --- | --- |
+| `POST /v1/auth/register` | none | `{email,password}`. Accepts an unused approved `@authforge.demo` email and a password of at least 12 characters. Creates a user and browser session; returns `{user:{id,email},csrf_token}` with `Cache-Control: no-store`. |
+| `POST /v1/auth/login` | none | `{email,password}`. Returns the same `401 invalid_user_credentials` failure for unknown users and incorrect passwords. Successful requests create a browser session and return `{user:{id,email},csrf_token}` with `Cache-Control: no-store`. |
+| `GET /v1/auth/me` | user cookie | Returns `{user:{id,email}}` for the current active browser session. |
+| `DELETE /v1/auth/session` | user cookie + CSRF | Revokes the current browser session, clears the cookie, and returns `204`. |
+
+The user cookie is HTTP-only, `SameSite=Strict`, and `Secure` outside local development. The registration, login, and user-session endpoints never return password data.
 
 ## API-key endpoints
 

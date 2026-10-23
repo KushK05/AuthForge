@@ -2,9 +2,9 @@
 
 ## Security posture
 
-AuthForge is a short-lived AWS showcase and must never be presented as production-ready authentication. Only synthetic demonstration identifiers may enter the system.
+AuthForge is a short-lived AWS showcase and must never be presented as a public production identity service. Only synthetic demonstration identifiers and approved `@authforge.demo` accounts may enter the system.
 
-Do not collect names, real email addresses, passwords, phone numbers, payment data, production API keys, customer identifiers, or other personal or business data. Temporary persistence in RDS, Redis, S3, SQS, SES, and CloudWatch is permitted only for synthetic evaluation data and must end with stack teardown.
+Do not collect names, real email addresses, phone numbers, payment data, production API keys, customer identifiers, or other personal or business data. Approved demo email and password records are temporary RDS data only; passwords are Argon2id hashes. No user identity data reaches Redis, S3, SQS, SES, CloudWatch, logs, metrics, or traces.
 
 ## Threat controls
 
@@ -13,6 +13,7 @@ Do not collect names, real email addresses, passwords, phone numbers, payment da
 | Console exposure | Strong Secrets Manager access code, HTTP-only cookie, exact Origin allowlist, required CSRF token, and Redis-backed failed-attempt limits. |
 | API-key leakage | Secure generation, one-time reveal, keyed digest in PostgreSQL, display prefix, revocation, log redaction, and `Cache-Control: no-store`. |
 | Session-token leakage | Opaque random token, one-time reveal, keyed digest, short TTL, ownership checks, and revocation. |
+| Demo-account takeover | Approved-domain registration, Argon2id password hashing, generic sign-in failure, HTTP-only browser cookie, exact Origin, CSRF, and short session expiry. |
 | Cross-key access | Resolve session ownership in PostgreSQL and make other keys' sessions undiscoverable. |
 | Injection and XSS | Request schemas, parameterized SQL, output encoding, strict content security policy, and bounded input lengths. |
 | CSRF | Exact trusted Origin plus `X-CSRF-Token` matched to the console session for every cookie-authenticated mutation. |
@@ -24,6 +25,7 @@ Do not collect names, real email addresses, passwords, phone numbers, payment da
 ## Credential handling
 
 - Use the platform cryptographic random generator for API keys, console cookies, CSRF tokens, and session tokens.
+- Hash demo-user passwords with Argon2id. Never log, queue, cache, email, or expose a password hash.
 - Use a Secrets Manager value as the keyed hashing input for credential digests.
 - Compare digests with timing-safe primitives.
 - Return raw API keys and session tokens only once with `Cache-Control: no-store`.

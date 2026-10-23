@@ -6,6 +6,8 @@ import type {
   ApiKeyRecord,
   ApplicationSessionRecord,
   ConsoleSessionRecord,
+  DemoUserRecord,
+  DemoUserSessionRecord,
   ShowcaseStore
 } from "./store.js";
 
@@ -26,6 +28,8 @@ type ApiKeyRow = Readonly<{
   created_at: Date;
   revoked_at: Date | null;
 }>;
+type UserRow = Readonly<{ id: string; email: string; password_hash: string; created_at: Date; disabled_at: Date | null }>;
+type UserSessionRow = Readonly<{ id: string; user_id: string; token_digest: Buffer; csrf_digest: Buffer; created_at: Date; expires_at: Date; revoked_at: Date | null }>;
 
 type SessionRow = Readonly<{
   id: string;
@@ -54,6 +58,8 @@ const toApiKey = (row: ApiKeyRow): ApiKeyRecord => ({
   createdAt: row.created_at,
   ...(row.revoked_at ? { revokedAt: row.revoked_at } : {})
 });
+const toUser = (row: UserRow): DemoUserRecord => ({ id: row.id, email: row.email, passwordHash: row.password_hash, createdAt: row.created_at, ...(row.disabled_at ? { disabledAt: row.disabled_at } : {}) });
+const toUserSession = (row: UserSessionRow): DemoUserSessionRecord => ({ id: row.id, userId: row.user_id, tokenDigest: row.token_digest, csrfDigest: row.csrf_digest, createdAt: row.created_at, expiresAt: row.expires_at, ...(row.revoked_at ? { revokedAt: row.revoked_at } : {}) });
 
 const toSession = (row: SessionRow): ApplicationSessionRecord => ({
   id: row.id,
@@ -105,6 +111,25 @@ export class PostgresShowcaseStore implements ShowcaseStore {
       WHERE id = ${id} AND revoked_at IS NULL
     `;
   }
+
+  public async createUser(record: DemoUserRecord): Promise<boolean> {
+    const result = await this.sql`INSERT INTO showcase_users (id, email, password_hash, created_at) VALUES (${record.id}, ${record.email}, ${record.passwordHash}, ${record.createdAt}) ON CONFLICT (email) DO NOTHING`;
+    return result.count === 1;
+  }
+  public async findUserByEmail(email: string): Promise<DemoUserRecord | undefined> {
+    const [row] = await this.sql<UserRow[]>`SELECT id, email, password_hash, created_at, disabled_at FROM showcase_users WHERE email = ${email} AND disabled_at IS NULL LIMIT 1`;
+    return row ? toUser(row) : undefined;
+  }
+  public async findUserById(id: string): Promise<DemoUserRecord | undefined> {
+    const [row] = await this.sql<UserRow[]>`SELECT id, email, password_hash, created_at, disabled_at FROM showcase_users WHERE id = ${id} AND disabled_at IS NULL LIMIT 1`;
+    return row ? toUser(row) : undefined;
+  }
+  public async createUserSession(record: DemoUserSessionRecord): Promise<void> { await this.sql`INSERT INTO showcase_user_sessions (id, user_id, token_digest, csrf_digest, created_at, expires_at) VALUES (${record.id}, ${record.userId}, ${record.tokenDigest}, ${record.csrfDigest}, ${record.createdAt}, ${record.expiresAt})`; }
+  public async findUserSession(tokenDigest: Buffer, now: Date): Promise<DemoUserSessionRecord | undefined> {
+    const [row] = await this.sql<UserSessionRow[]>`SELECT id, user_id, token_digest, csrf_digest, created_at, expires_at, revoked_at FROM showcase_user_sessions WHERE token_digest = ${tokenDigest} AND revoked_at IS NULL AND expires_at > ${now} LIMIT 1`;
+    return row ? toUserSession(row) : undefined;
+  }
+  public async revokeUserSession(id: string, now: Date): Promise<void> { await this.sql`UPDATE showcase_user_sessions SET revoked_at = ${now} WHERE id = ${id} AND revoked_at IS NULL`; }
 
   public async createApiKey(record: ApiKeyRecord): Promise<void> {
     await this.sql.begin(async (transaction) => {
@@ -227,6 +252,41 @@ export class PostgresShowcaseStore implements ShowcaseStore {
         `;
       }
       return result.count > 0;
+    }) as Promise<boolean>;
+  }
+
+  public async rotateSession(id: string, presentedDigest: Buffer, newDigest: Buffer, now: Date): Promise<boolean> {
+    return this.sql.begin(async (transaction) => {
+      const result = await transaction`
+        UPDATE showcase_sessions
+        SET previous_token_digest = token_digest, token_digest = ${newDigest}
+        WHERE id = ${id} AND token_digest = ${presentedDigest}
+          AND revoked_at IS NULL AND expires_at > ${now}
+      `;
+      if (result.count === 0) return false;
+      await transaction`
+        INSERT INTO showcase_outbox_events (id, event_type, event_version, payload, created_at)
+        VALUES (${randomUUID()}, 'showcase.session.refreshed', 1,
+          ${transaction.json({ session_id: id })}, ${now})
+      `;
+      return true;
+    }) as Promise<boolean>;
+  }
+
+  public async revokeReplayedSession(apiKeyId: string, presentedDigest: Buffer, now: Date): Promise<boolean> {
+    return this.sql.begin(async (transaction) => {
+      const [session] = await transaction<{ id: string }[]>`
+        UPDATE showcase_sessions SET revoked_at = COALESCE(revoked_at, ${now})
+        WHERE api_key_id = ${apiKeyId} AND previous_token_digest = ${presentedDigest}
+        RETURNING id
+      `;
+      if (!session) return false;
+      await transaction`
+        INSERT INTO showcase_outbox_events (id, event_type, event_version, payload, created_at)
+        VALUES (${randomUUID()}, 'showcase.session.replay_detected', 1,
+          ${transaction.json({ session_id: session.id, api_key_id: apiKeyId })}, ${now})
+      `;
+      return true;
     }) as Promise<boolean>;
   }
 }

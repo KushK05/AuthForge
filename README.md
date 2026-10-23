@@ -1,12 +1,13 @@
 # AuthForge
 
-AuthForge is a temporary authentication showcase with three product capabilities:
+AuthForge is a temporary AWS authentication showcase with four product capabilities:
 
 - A small developer console.
 - Creation, listing, and revocation of API keys.
 - Creation, validation, listing, and revocation of application sessions.
+- Hosted registration and sign-in for approved demonstration users.
 
-It is not a production identity platform. It has no end-user account system and accepts only synthetic demonstration data.
+It is not a public production service. It accepts only approved `@authforge.demo` identities and synthetic demonstration data, and all data is deleted after the evaluation.
 
 ## Evaluation requirement
 
@@ -28,7 +29,7 @@ M0 is complete: the application source, configuration, dependencies, migrations,
 ## Explicitly excluded
 
 - Developer organizations, teams, tenant projects, environments, and billing.
-- End-user registration, passwords, email verification, password reset, profiles, roles, and permissions.
+- Public onboarding, real-recipient email, password reset, profiles, roles, permissions, and billing.
 - Social login, MFA, refresh-token families, public JWT/JWKS infrastructure, and user directories.
 - Real recipient email, real personal data, production traffic, long-term retention, backups, and disaster recovery.
 - Microservices, multi-region operation, and independent domain deployments.
@@ -37,7 +38,8 @@ M0 is complete: the application source, configuration, dependencies, migrations,
 
 1. Open the developer console and enter the deployment-scoped console access code.
 2. Create an API key and copy its secret from the one-time response.
-3. Use the API key to create a session for a synthetic subject such as `demo-user-1`.
+3. Register and sign in an approved `@authforge.demo` user on the hosted identity page.
+4. Use the API key to create a session for that demo user.
 4. Validate the returned session token.
 5. Revoke the session or API key and show that subsequent validation fails.
 6. Show the synthetic lifecycle event moving through SQS to the worker, CloudWatch, S3, and SES sandbox integration.

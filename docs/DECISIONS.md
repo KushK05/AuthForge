@@ -4,7 +4,7 @@ This is an append-only log. Status values: `accepted`, `superseded`, `proposed`,
 
 ## Active decision
 
-ADR-009 is the active project scope. It narrows the product while preserving the AWS services selected in earlier records as evaluation requirements. Earlier records remain historical context where ADR-009 changes their product or retention assumptions.
+ADR-010 is the active project scope. It retains the temporary AWS evaluation constraints from ADR-009 while allowing approved demo-user registration and sign-in.
 
 ## ADR-001: Modular monolith with event-driven worker
 
@@ -85,6 +85,17 @@ ADR-009 is the active project scope. It narrows the product while preserving the
 - Consequences: Product code and data remain small, while infrastructure still spans the required AWS services. Synthetic state can survive task restarts during the showcase but is permanently deleted with the stack. The service cannot support real users and must never be represented as production-ready.
 - Migration and rollback: There is no production data to migrate. Existing source and infrastructure may be simplified to the new tables, modules, and smallest AWS configurations. Rollback during development may destroy and recreate the temporary environment. Returning to a real identity platform requires a new decision record and new security, data, migration, and operations designs.
 - Verification: Contract tests cover the endpoints in `API_CONTRACTS.md`. End-to-end tests prove console access, CSRF, key lifecycle, session lifecycle, ownership, expiry, revocation, outbox and SQS handling, SES sandbox, S3 redaction, CloudWatch evidence, DLQ behavior, and complete Terraform teardown without retained AuthForge data.
+
+## ADR-010: Approved demo-user registration and password sign-in
+
+- Status: accepted
+- Date: 2026-10-23
+- Context: The showcase needs a realistic hosted registration and sign-in experience while remaining a temporary evaluation environment.
+- Decision: Accept only approved `@authforge.demo` addresses, hash passwords with Argon2id, and keep demo users and their browser sessions in RDS until Terraform teardown. The developer console remains separately protected by its deployment-scoped access code.
+- Alternatives: Public registration and real-recipient email are rejected because they conflict with the evaluation-only data boundary. A static sign-in mock is rejected because the demo needs a real authentication journey.
+- Consequences: Evaluators can exercise a complete sign-up and sign-in flow without customer data, public onboarding, email delivery, or retention after teardown.
+- Migration and rollback: The forward-only schema is disposable. Rollback destroys and recreates the temporary stack.
+- Verification: Unit tests cover password and user-session rules; contract and browser tests cover registration, sign-in, sign-out, CSRF, and generic invalid-credential responses.
 
 ## ADR template
 
