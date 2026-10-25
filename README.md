@@ -24,7 +24,7 @@ RDS, Redis, S3, queues, logs, and other resources may contain synthetic showcase
 
 ## Current repository status
 
-M0 is complete: the application source, configuration, dependencies, migrations, and tests describe only the developer console, API keys, application sessions, showcase events, and required AWS adapters. Redis remains in the local topology for later console throttling and validation cache. Terraform still provisions the temporary evaluation environment and will be completed in later milestones.
+The local backend implements hosted demo registration/sign-in, console access, API keys, opaque application sessions, and the SQS/worker/S3/SES simulator journey. Local contract, integration, and browser checks are described in `docs/TESTING.md`. AWS deployment configuration, a guarded migration helper, and an offline Terraform test suite are prepared; no AWS environment is deployed as part of local setup.
 
 ## Explicitly excluded
 
@@ -40,10 +40,10 @@ M0 is complete: the application source, configuration, dependencies, migrations,
 2. Create an API key and copy its secret from the one-time response.
 3. Register and sign in an approved `@authforge.demo` user on the hosted identity page.
 4. Use the API key to create a session for that demo user.
-4. Validate the returned session token.
-5. Revoke the session or API key and show that subsequent validation fails.
-6. Show the synthetic lifecycle event moving through SQS to the worker, CloudWatch, S3, and SES sandbox integration.
-7. Destroy the Terraform environment and verify that no AuthForge data resource remains.
+5. Validate the returned session token.
+6. Revoke the session or API key and show that subsequent validation fails.
+7. Show the synthetic lifecycle event moving through SQS to the worker, CloudWatch, S3, and SES sandbox integration.
+8. Destroy the Terraform environment and verify that no AuthForge data resource remains.
 
 ## Documentation map
 
@@ -60,17 +60,35 @@ M0 is complete: the application source, configuration, dependencies, migrations,
 | [TESTING.md](docs/TESTING.md) | Unit, integration, contract, end-to-end, and teardown checks. |
 | [DECISIONS.md](docs/DECISIONS.md) | Architecture decision history and active scope decision. |
 
-## Local target
+## Run the local demo (no AWS account required)
 
-Local development may use Docker Compose for PostgreSQL, Redis, and LocalStack equivalents of SQS, SES, S3, KMS, and Secrets Manager. The expected path is:
+Install Docker Desktop and use Node.js 22.15+ or 24. The Compose environment uses free local PostgreSQL, Redis, and LocalStack Community services. It does not create AWS resources or send real email.
 
 ```bash
-npm install
-cp .env.example .env
-docker compose up -d
-npm run migrate
-npm run dev:api
-npm run dev:worker
+npm ci
+docker compose up --build -d --wait
 ```
 
-Do not claim this path works until the implementation, Compose file, environment template, migrations, and the journey in [TESTING.md](docs/TESTING.md) are aligned and verified.
+Open http://127.0.0.1:8080 for demo signup/sign-in and http://127.0.0.1:8080/console for developer access. Without a `.env` file, the local console access code is `local-showcase-console-access-code`.
+
+Use only synthetic addresses such as `learner@authforge.demo` and a demo password of at least 12 characters. Create an API key in the console; keep it on the demo application backend. The console previews do not configure MFA, verification, redirects, or webhooks.
+
+Compose creates emulator resources, runs forward-only migrations, then starts the API and worker. Optional API `.env` overrides must keep `CONSOLE_ORIGIN` exactly equal to the address used in the browser. The worker and migration runner use separate optional `.env.worker` and `.env.migrate` files and need no console access code or digest key. Never reuse local example credentials for AWS.
+
+Run the complete local API and event check (prints no credentials):
+
+```bash
+npm run demo:check
+```
+
+Stop and delete all local demo records:
+
+```bash
+docker compose down --volumes
+```
+
+For automated verification, follow [TESTING.md](docs/TESTING.md). Real AWS deployment requires a separate explicit approval and will incur AWS charges; no `terraform apply` is needed for the local demo.
+
+## Future AWS evaluation
+
+Run `npm run infra:check` to validate the prepared infrastructure locally. The first run needs provider initialization: `bash scripts/infra-check.sh --init`. These checks do not deploy anything. The [AWS runbook](docs/AWS_RUNBOOK.md) explains the separately approved future migration, deployment, simulator verification, and teardown steps. Real AWS operation remains unverified until that evaluation.

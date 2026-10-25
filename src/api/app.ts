@@ -7,15 +7,16 @@ import {
   ApplicationError,
   invalidCredentials,
   invalidRequest,
+  invalidCsrf,
   notFound,
   unavailableDependency
 } from "../shared/application/errors.js";
 import { hashOpaqueSecret } from "../shared/crypto/opaque-secret.js";
 import type { AppConfig } from "../platform/config.js";
+import { noValidationHints, type ValidationHints } from "../platform/validation-hints.js";
 import { Logger } from "../platform/logger.js";
 import { ApiKeyService } from "../modules/api-keys/api-key-service.js";
 import { ConsoleService } from "../modules/developer-console/console-service.js";
-import { type AccessTokenSigner, createAccessTokenSigner } from "../modules/sessions/access-token-signer.js";
 import { type IssuedSession, SessionService } from "../modules/sessions/session-service.js";
 import { UserService } from "../modules/users/user-service.js";
 import { authClient, authPage } from "./auth-page.js";
@@ -51,10 +52,7 @@ const publicSession = (record: ApplicationSessionRecord) => ({
 
 const issuedSessionBody = (issued: IssuedSession) => ({
   ...publicSession(issued.session),
-  token: issued.token,
-  access_token: issued.accessToken,
-  token_type: "Bearer",
-  expires_in: issued.accessTokenExpiresIn
+  token: issued.token
 });
 
 const getOrigin = (request: FastifyRequest): string | undefined => {
@@ -67,12 +65,14 @@ export const buildApi = (
   store: ShowcaseStore,
   rateLimiter: ConsoleRateLimiter = new MemoryConsoleRateLimiter(),
   logger = new Logger(config.logLevel, config.environment),
-  signer: AccessTokenSigner = createAccessTokenSigner(config)
+  validationHints: ValidationHints = noValidationHints
 ): FastifyInstance => {
-  const api = Fastify({ logger: false });
+  // AWS has exactly two trusted hops: ALB and CloudFront. Never trust the
+  // viewer-supplied prefix of X-Forwarded-For.
+  const api = Fastify({ logger: false, bodyLimit: config.maxRequestBodyBytes ?? 16384, trustProxy: config.trustProxy ? (_address: string, hop: number) => hop < 2 : false });
   const consoleService = new ConsoleService(config, store, rateLimiter);
   const apiKeyService = new ApiKeyService(config, store);
-  const sessionService = new SessionService(config, store, signer);
+  const sessionService = new SessionService(config, store);
   const userService = new UserService(config, store);
 
   api.addHook("onRequest", async (request, reply) => {
@@ -81,6 +81,8 @@ export const buildApi = (
       ? supplied
       : `req_${randomUUID()}`;
     reply.header("X-Request-Id", request.requestId);
+    reply.header("Cache-Control", "no-store");
+    reply.header("X-Content-Type-Options", "nosniff");
   });
 
   api.addHook("onResponse", async (request, reply) => {
@@ -93,9 +95,14 @@ export const buildApi = (
   });
 
   api.setErrorHandler((error, request, reply) => {
-    const known = error instanceof ApplicationError;
-    const status = known ? error.status : 500;
-    const code = known ? error.code : "internal_error";
+    if (!(error instanceof ApplicationError)) {
+      const statusCode = (error as { statusCode?: number }).statusCode;
+      if (statusCode && statusCode >= 400 && statusCode < 500) error = invalidRequest("Invalid HTTP request");
+      else if (/^(ECONN|ETIMEDOUT|ENOTFOUND|CONNECTION_|57P0|53300|080)/.test(String((error as { code?: string }).code ?? ""))) error = unavailableDependency();
+    }
+    const known = error instanceof ApplicationError ? error : undefined;
+    const status = known ? known.status : 500;
+    const code = known ? known.code : "internal_error";
     if (!known) {
       logger.error("Unhandled request error", {
         request_id: request.requestId,
@@ -105,7 +112,7 @@ export const buildApi = (
     void reply.status(status).send({
       error: {
         code,
-        message: known ? error.message : "Internal server error",
+        message: known ? known.message : "Internal server error",
         request_id: request.requestId
       }
     });
@@ -139,20 +146,9 @@ export const buildApi = (
     try {
       await store.ready();
       await rateLimiter.ready();
-      await signer.jwks();
       return reply.send({ status: "ok" });
     } catch (error) {
       if (error instanceof ApplicationError) throw error;
-      throw unavailableDependency();
-    }
-  });
-
-  api.get("/.well-known/jwks.json", async (_request, reply) => {
-    try {
-      const keys = await signer.jwks();
-      reply.header("Cache-Control", "public, max-age=300");
-      return reply.send(keys);
-    } catch {
       throw unavailableDependency();
     }
   });
@@ -168,7 +164,15 @@ export const buildApi = (
   });
 
   const userCookie = (token: string, maxAge: number): string => `${userCookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.secureCookies ? "; Secure" : ""}`;
+  const throttleUserAuth = async (request: FastifyRequest): Promise<string> => {
+    if (getOrigin(request) !== config.consoleOrigin) throw invalidCsrf();
+    const bucket = `auth:${digest(request.ip, config).toString("hex")}`;
+    await rateLimiter.assertAllowed(bucket);
+    await rateLimiter.recordFailure(bucket);
+    return bucket;
+  };
   api.post("/v1/auth/register", async (request, reply) => {
+    await throttleUserAuth(request);
     const body = z.object({ email: z.string().max(254), password: z.string().max(256) }).strict().safeParse(request.body);
     if (!body.success) throw invalidRequest("Invalid registration request");
     const issued = await userService.register(body.data.email, body.data.password);
@@ -176,25 +180,24 @@ export const buildApi = (
     return reply.status(201).send({ user: { id: issued.user.id, email: issued.user.email }, csrf_token: issued.csrfToken });
   });
   api.post("/v1/auth/login", async (request, reply) => {
+    await throttleUserAuth(request);
     const body = z.object({ email: z.string().max(254), password: z.string().max(256) }).strict().safeParse(request.body);
     if (!body.success) throw invalidRequest("Invalid sign-in request");
     const issued = await userService.login(body.data.email, body.data.password);
     reply.header("Set-Cookie", userCookie(issued.token, 3600)); reply.header("Cache-Control", "no-store");
     return reply.send({ user: { id: issued.user.id, email: issued.user.email }, csrf_token: issued.csrfToken });
   });
-  api.get("/v1/auth/me", async (request, reply) => {
-    try {
-      const current = await userService.authenticate(parseCookie(request.headers.cookie, userCookieName));
-      return { user: { id: current.user.id, email: current.user.email } };
-    } catch (error) {
-      if (error instanceof ApplicationError && error.code === "invalid_credentials") return reply.status(204).send();
-      throw error;
-    }
+  api.get("/v1/auth/me", async (request) => {
+    const origin = getOrigin(request);
+    if (origin !== undefined && origin !== config.consoleOrigin) throw invalidCsrf();
+    const current = await userService.authenticate(parseCookie(request.headers.cookie, userCookieName));
+    return { user: { id: current.user.id, email: current.user.email }, csrf_token: current.csrfToken };
   });
   api.delete("/v1/auth/session", async (request, reply) => {
     const current = await userService.authenticate(parseCookie(request.headers.cookie, userCookieName));
     const csrf = typeof request.headers["x-csrf-token"] === "string" ? request.headers["x-csrf-token"] : undefined;
-    await userService.verifyCsrf(current.session, csrf); await store.revokeUserSession(current.session.id, new Date());
+    if (getOrigin(request) !== config.consoleOrigin) throw invalidCsrf();
+    userService.verifyCsrf(current.session, csrf); await store.revokeUserSession(current.session.id, new Date());
     reply.header("Set-Cookie", userCookie("", 0)); return reply.status(204).send();
   });
 
@@ -237,7 +240,7 @@ export const buildApi = (
     const apiKey = await requireApiKey(request);
     const body = z.object({
       subject: z.string().trim().min(1).max(config.maxSubjectLength),
-      ttl_seconds: z.coerce.number().int().min(30).max(config.maxSessionTtlSeconds).optional()
+      ttl_seconds: z.number().int().min(30).max(config.maxSessionTtlSeconds).optional()
     }).strict().safeParse(request.body);
     if (!body.success) throw invalidRequest("Invalid session request");
     const issued = await sessionService.create(apiKey, body.data.subject, body.data.ttl_seconds);
@@ -245,21 +248,19 @@ export const buildApi = (
     return reply.status(201).send(issuedSessionBody(issued));
   });
 
-  api.post("/v1/sessions/refresh", async (request, reply) => {
-    const apiKey = await requireApiKey(request);
-    const body = z.object({ token: z.string().min(1).max(512) }).strict().safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid session refresh request");
-    const issued = await sessionService.refresh(apiKey, body.data.token);
-    reply.header("Cache-Control", "no-store");
-    return reply.send(issuedSessionBody(issued));
-  });
-
   api.post("/v1/sessions/validate", async (request) => {
     const apiKey = await requireApiKey(request);
     const body = z.object({ token: z.string().min(1).max(512) }).strict().safeParse(request.body);
     if (!body.success) throw invalidRequest("Invalid session validation request");
-    const session = await store.findSession(apiKey.id, digest(body.data.token, config), new Date());
-    if (!session) throw invalidCredentials("invalid_session");
+    const tokenDigest = digest(body.data.token, config);
+    const hint = await validationHints.get(apiKey.id, tokenDigest);
+    const session = await store.findSession(apiKey.id, tokenDigest, new Date());
+    if (!session) {
+      await validationHints.forget(apiKey.id, tokenDigest);
+      throw invalidCredentials("invalid_session");
+    }
+    await validationHints.remember(apiKey.id, tokenDigest, session.id, session.expiresAt);
+    logger.debug("Session validated against PostgreSQL", {validation_cache: hint === session.id ? "hit" : "miss"});
     return { valid: true, session: publicSession(session) };
   });
 
@@ -285,5 +286,6 @@ export const buildApi = (
     return reply.status(204).send();
   });
 
+  api.setNotFoundHandler(() => { throw notFound(); });
   return api;
 };

@@ -4,6 +4,7 @@ import { loadConfig, loadLocalEnvironmentFile } from "../platform/config.js";
 import { Logger } from "../platform/logger.js";
 import { PostgresShowcaseStore } from "../platform/postgres-store.js";
 import { createRedisClient, RedisConsoleRateLimiter } from "../platform/redis.js";
+import { RedisValidationHints } from "../platform/validation-hints.js";
 import { buildApi } from "./app.js";
 
 loadLocalEnvironmentFile();
@@ -11,8 +12,9 @@ const config = loadConfig();
 const logger = new Logger(config.logLevel, config.environment);
 const database = postgres(config.databaseUrl, { max: 10 });
 const redis = createRedisClient(config.redisUrl);
-const rateLimiter = new RedisConsoleRateLimiter(redis);
-const api = buildApi(config, new PostgresShowcaseStore(database), rateLimiter, logger);
+redis.on("error", () => logger.warn("Redis connection unavailable", {metric: "RedisFailure", value: 1}));
+const rateLimiter = new RedisConsoleRateLimiter(redis, config.maxFailedConsoleAttempts, config.consoleAttemptWindowSeconds);
+const api = buildApi(config, new PostgresShowcaseStore(database), rateLimiter, logger, new RedisValidationHints(redis));
 
 const close = async (signal: string): Promise<void> => {
   logger.info("Stopping API", { signal });
@@ -27,4 +29,7 @@ process.once("SIGINT", () => void close("SIGINT"));
 
 void api.listen({ host: config.host, port: config.port }).then(() => {
   logger.info("API started", { host: config.host, port: config.port });
+}).catch(async () => {
+  logger.error("API startup failed");
+  await database.end({timeout: 5}); redis.disconnect(); process.exitCode = 1;
 });

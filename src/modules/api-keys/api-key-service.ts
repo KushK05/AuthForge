@@ -71,7 +71,7 @@ export class ApiKeyService {
       createdAt
     };
 
-    await this.store.createApiKey(record);
+    await this.store.createApiKey(record, this.config.maxApiKeys);
 
     return {
       id: record.id,

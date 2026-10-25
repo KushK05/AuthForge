@@ -50,7 +50,7 @@ S3 stores only redacted synthetic lifecycle-event artifacts used as evaluation e
 3. One PostgreSQL transaction writes the state change and a minimal outbox event.
 4. A successful response means the temporary PostgreSQL state committed.
 5. The worker publishes pending outbox rows to SQS and marks them published.
-6. The worker consumes SQS events idempotently, emits CloudWatch metrics, writes a redacted S3 artifact, and optionally calls SES using only a sandbox or simulator recipient.
+6. The worker consumes SQS events with completion deduplication, emits CloudWatch metrics, writes a redacted S3 artifact, and optionally calls SES using only a sandbox or simulator recipient.
 7. Exhausted event processing enters the DLQ and is visible during evaluation.
 
 Event payloads contain event ID, event type, timestamp, API-key ID, session ID when applicable, and correlation ID. They never contain raw keys, tokens, access codes, subjects, email addresses, or request bodies.
@@ -81,3 +81,17 @@ tests/                       Unit, integration, contract, e2e, security
 - Terraform destroy is the supported deletion workflow.
 
 These limits reduce product complexity while preserving the required AWS integrations.
+
+## Implemented worker boundary
+
+The worker uses the standard SES API supported by the free local emulator. The AWS service set is unchanged. Queue messages use a strict versioned allowlist; arbitrary outbox payload fields are excluded. Correlation defaults to the event identifier when no explicit correlation is present. S3 retains only that redacted envelope, processing time, and the synthetic marker.
+
+Worker concurrency is controlled with PostgreSQL transaction-scoped advisory locks, and completed event IDs are recorded in the inbox. S3 writes are repeatable. SES remains at-least-once across a process crash; see `SECURITY.md`. A `showcase.test.failure` event deliberately fails processing so the SQS redrive policy can demonstrate the DLQ.
+
+`WorkerSuccess`, `WorkerFailure`, and `PublishFailure` log metrics contain no credential or subject. Terraform extracts them into CloudWatch metrics.
+
+## Runtime configuration boundary
+
+`loadConfig` supplies the API configuration. `loadWorkerConfig` supplies only the worker's database/event settings. `loadMigrationConfig` supplies only the migration runner's database/logging settings. The worker and migration processes do not load the API's `.env` file. All three continue to use the same image and codebase, with task-specific secret injection and execution roles.
+
+Invalid outbox envelopes receive a terminal `discarded_at` marker and a redacted `PublishDiscarded` log entry containing only the event ID. Publication continues with later rows; transport failures remain retryable. Legacy refresh/replay events are discarded by forward migration 0014 before startup.

@@ -23,3 +23,7 @@ export const timingSafeStringEqual = (a: string, b: string): boolean => {
   const bufB = Buffer.from(b);
   return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
 };
+
+// A random browser cookie supplies entropy; domain separation prevents credential reuse.
+export const userCsrfToken = (token: string, key: string): string =>
+  `csrf_${hashOpaqueSecret(`user-csrf:${token}`, key).toString("base64url")}`;

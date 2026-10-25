@@ -60,9 +60,9 @@ Missing or invalid proof returns `403 invalid_csrf`. `GET` routes still enforce 
 
 | Method and path | Auth | Contract |
 | --- | --- | --- |
-| `POST /v1/auth/register` | none | `{email,password}`. Accepts an unused approved `@authforge.demo` email and a password of at least 12 characters. Creates a user and browser session; returns `{user:{id,email},csrf_token}` with `Cache-Control: no-store`. |
+| `POST /v1/auth/register` | none | `{email,password}`. Accepts an unused approved `@authforge.demo` email and a password of at least 12 characters. Creates a user and browser session atomically; duplicate email returns `409 conflict`; returns `{user:{id,email},csrf_token}` with `Cache-Control: no-store`. |
 | `POST /v1/auth/login` | none | `{email,password}`. Returns the same `401 invalid_user_credentials` failure for unknown users and incorrect passwords. Successful requests create a browser session and return `{user:{id,email},csrf_token}` with `Cache-Control: no-store`. |
-| `GET /v1/auth/me` | user cookie | Returns `{user:{id,email}}` for the current active browser session. |
+| `GET /v1/auth/me` | user cookie | Returns `{user:{id,email},csrf_token}` for the current active browser session; `401 invalid_user_credentials` otherwise. This restores sign-out proof after reload and uses `Cache-Control: no-store`. |
 | `DELETE /v1/auth/session` | user cookie + CSRF | Revokes the current browser session, clears the cookie, and returns `204`. |
 
 The user cookie is HTTP-only, `SameSite=Strict`, and `Secure` outside local development. The registration, login, and user-session endpoints never return password data.
@@ -95,3 +95,15 @@ Every API-key or session mutation appends a versioned outbox event in the same P
 ## Compatibility policy
 
 The `/v1` contract is stable for the showcase implementation and tests, but there is no long-term support commitment. An incompatible change must update this document and its contract tests in the same change.
+
+## Local-demo implementation details
+
+- “Approved” means an address matching the synthetic `@authforge.demo` domain; no external email or public identity is verified.
+- Hosted registration and login require the exact configured Origin. All hosted cookie mutations require Origin and CSRF. Bad proof returns `403 invalid_csrf`.
+- Hosted authentication attempts are bounded per client using Redis. Registration and login share an attempt window, including successes; this also bounds password-hashing work. Console failures use a separate counter.
+- Browser sessions expire after one hour; console sessions after 15 minutes. Application sessions default to 15 minutes with a configured maximum of one hour.
+- User/session capacity checks and registration writes occur atomically. API-key capacity counts all keys retained for the demo; session capacity counts active sessions only.
+- Every response is `no-store`, including errors. Malformed JSON and oversized bodies return `400 invalid_request` in the stable error envelope. Unknown routes return `404 not_found` in that envelope.
+- Sessions use opaque tokens only. There is no JWT/JWKS or refresh endpoint.
+- Redis validation hints contain only session IDs under credential digests and expire within 30 seconds. Every validation still checks PostgreSQL; cache loss or stale hints cannot grant access.
+- Console state includes `events`: up to 50 `{id,event_type,created_at,published_at,processed_at}` summaries. Timestamps for incomplete stages are null.

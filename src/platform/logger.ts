@@ -22,7 +22,7 @@ const sensitiveSubstrings = [
   "apikey"
 ];
 
-const secretPattern = /(?:sk|cs|csrf|sess)_[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9_.-]+/gi;
+const secretPattern = /(?:sk|cs|csrf|sess|usr)_[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9_.-]+/gi;
 
 const isBlockedKey = (key: string): boolean => {
   const normalized = key.toLowerCase().replace(/[-_]/g, "");

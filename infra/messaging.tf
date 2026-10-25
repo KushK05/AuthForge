@@ -90,5 +90,16 @@ resource "aws_s3_bucket_policy" "artifacts" {
 
 # Sandbox sender identity. SES must stay in sandbox or simulator mode.
 resource "aws_sesv2_email_identity" "sender" {
-  email_identity = var.ses_from_email
+  email_identity = local.ses_domain
+  dkim_signing_attributes { next_signing_key_length = "RSA_2048_BIT" }
+}
+
+# Domain verification uses DNS only; no verification message is sent to an inbox.
+resource "aws_route53_record" "ses_dkim" {
+  count   = 3
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "${aws_sesv2_email_identity.sender.dkim_signing_attributes[0].tokens[count.index]}._domainkey.${local.ses_domain}"
+  type    = "CNAME"
+  ttl     = 60
+  records = ["${aws_sesv2_email_identity.sender.dkim_signing_attributes[0].tokens[count.index]}.${var.ses_dkim_domain}"]
 }

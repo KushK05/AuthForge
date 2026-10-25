@@ -57,3 +57,27 @@ Set CloudWatch and S3 retention to the shortest period accepted by the evaluatio
 - No disaster recovery or retained backup exists.
 - Destroying the AWS environment permanently deletes all AuthForge state.
 - Passing the showcase security checks does not establish production readiness.
+
+## Local demonstration safeguards
+
+Local Compose binds published ports to loopback and sends SQS, S3, and SES requests to LocalStack with dummy credentials. No AWS account or paid LocalStack features are needed. Hosted registration and sign-in require the trusted Origin and share a Redis-backed attempt limit. SES recipients are restricted in configuration and the worker to the AWS mailbox simulator allowlist.
+
+`TRUST_PROXY` defaults to false locally. When enabled it trusts exactly two hops (ALB and CloudFront), never the entire forwarded chain. The viewer IP is the second address from the right in `X-Forwarded-For`; caller-supplied prefixes cannot change its rate-limit bucket. This requires the documented origin-header-protected ALB path, no shorter public route to the API, and ALB append mode. Verify forwarded client addresses during any future AWS smoke test; reassess this setting before changing the proxy topology.
+
+Worker completion records and transaction-scoped advisory locks prevent concurrent handling and suppress completed duplicates. S3 uses a deterministic event object key. SES does not provide an exactly-once transaction with PostgreSQL: a crash after sending but before recording completion can repeat a simulator message. No real notification or business effect is permitted.
+
+Local tests and containers may be run without cloud charges. Creating an AWS environment is a separate paid action and is not part of local preparation.
+
+## Future AWS runtime checks
+
+Outside local/test environments, configuration requires verified PostgreSQL TLS (`sslmode=verify-full`), Redis TLS, secure cookies, and HTTPS. The image includes the public RDS CA bundle; never disable certificate verification to work around a connection error. Worker deployments require the complete event configuration and cannot use emulator endpoints.
+
+The SES sender is a fixed synthetic infrastructure address under a DNS-verified subdomain of the showcase hostname; it is not a user account or inbox. Terraform verifies the domain through DNS, without recipient email. IAM restricts sending to the configured simulator address as well as the fixed sender.
+
+`evaluation_owner` is a synthetic operator label, and `teardown_at` records the explicit deadline. Tags do not automatically destroy resources. Any future owner must execute and verify teardown. KMS deletion has a seven-day pending-deletion period; no application data or active project key may be retained outside that approved deletion path.
+
+## Workload secret isolation
+
+The API receives `DATABASE_URL`, `CONSOLE_ACCESS_CODE`, and `CREDENTIAL_HASH_KEY`. The worker and run-once migration task receive only `DATABASE_URL`. Each workload has its own ECS execution role with access to its own log group and required Secrets Manager ARNs. Execution-role KMS decryption is restricted to Secrets Manager and those secret ARNs using the [AWS-documented service and encryption-context conditions](https://docs.aws.amazon.com/secretsmanager/latest/userguide/security-encryption.html); application task roles cannot fetch authentication secrets.
+
+Worker configuration validates only database and event settings. Migration configuration validates only database and runtime logging settings. They do not require or return API authentication secrets or Redis settings. Local Compose uses separate optional `.env.worker` and `.env.migrate` files, with `.env` reserved for the API; all are excluded from Git.

@@ -4,7 +4,7 @@ Build the smallest complete product and AWS evaluation path. A milestone is comp
 
 ## M0 - narrow the domain
 
-Remove organizations, tenant projects, environments, users, passwords, email verification, password reset, roles, permissions, JWT/JWKS, refresh-token families, and durable audit-product requirements. Keep TypeScript, Fastify, PostgreSQL migrations, Redis, the API/worker topology, and AWS adapters needed by the evaluation.
+Remove organizations, tenant projects, environments, public user management, email verification, password reset, roles, permissions, JWT/JWKS, refresh-token families, and durable audit-product requirements. Keep approved demo users and Argon2id passwords under ADR-010, TypeScript, Fastify, PostgreSQL migrations, Redis, the API/worker topology, and AWS adapters needed by the evaluation.
 
 Exit criteria: docs, source layout, configuration, dependencies, and tests describe only the console, API keys, sessions, showcase events, and required AWS services.
 
@@ -16,7 +16,7 @@ Exit criteria: console protection and API-key lifecycle pass unit, integration, 
 
 ## M2 - sessions
 
-Implement session creation, one-time token reveal, validation, listing, expiry, API-key ownership, console revocation, API-key cascade revocation, and short-lived Redis caching.
+Implement session creation, one-time token reveal, validation, listing, expiry, API-key ownership, console revocation, API-key cascade revocation, and short-lived Redis identifier hints with PostgreSQL checks on every validation.
 
 Exit criteria: expiry, wrong-key validation, both revocation paths, Redis loss, and PostgreSQL authority are tested.
 

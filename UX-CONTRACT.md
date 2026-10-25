@@ -53,7 +53,7 @@
 
 - The active console view is client-side only and does not alter the URL because the view is operator-private and non-shareable.
 - In-scope console views are overview, user and authentication, MFA, sessions, hosted paths, webhooks, and API keys. Organizations, billing, public user administration, social login, and production controls are excluded.
-- Authentication, MFA, session policy, hosted paths, and webhook controls are explicitly static previews until their corresponding backend contracts exist. Static actions acknowledge local preview state only.
+- Authentication, MFA, session policy, hosted paths, and webhook controls are explicitly static previews until their corresponding backend contracts exist. Static actions acknowledge preview state only; no setting is saved.
 - At 960px the configuration rail is removed and the primary navigation remains horizontally scrollable. At 700px, cards and forms stack.
 - Lists have visible internal scrollbars and do not force the page into a fixed-height layout.
 
@@ -61,6 +61,7 @@
 
 - Dialog primitive: One accessible app-owned confirmation dialog with Escape, focus trap, Cancel, and focus restoration.
 - Destructive confirmation: Required for revoking API keys or sessions. The dialog names the consequence.
+- Cancel, Escape, and backdrop dismissal clear the pending action without sending a mutation. Browsing console sections does not revoke credentials.
 - Toast: Bottom-right, six seconds, one status message at a time. It never includes a secret.
 
 ## Async and resilience
@@ -79,3 +80,7 @@
 
 - Static commands: `npm run build`, `npm run lint`, `npm test`.
 - Browser coverage: unlock, empty state, create/copy/revoke key, session inspection/revocation, logout, failure path, keyboard dialog, narrow viewport.
+
+## Hosted authentication
+
+The hosted page restores `{user,csrf_token}` through `/v1/auth/me` on reload. Sign-out keeps the account visible and shows an error if server revocation fails. Secrets are never included in toasts. Console locking and dismissing the one-time API key clear the displayed secret text. Session failures return to the console unlock form. Browser tests exercise the dialog focus trap, signup/reload/signout, key and session revocation, and narrow layouts.

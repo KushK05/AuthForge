@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 
 import postgres from "postgres";
 
-import { loadConfig, loadLocalEnvironmentFile } from "../config.js";
+import { loadMigrationConfig, loadLocalEnvironmentFile } from "../config.js";
 import { Logger } from "../logger.js";
 
 export type Migration = Readonly<{
@@ -56,25 +56,26 @@ const applyMigration = async (sql: postgres.Sql, migration: Migration): Promise<
   });
 };
 
-export const migrate = async (): Promise<void> => {
-  loadLocalEnvironmentFile();
-  const config = loadConfig();
-  const logger = new Logger(config.logLevel, config.environment);
-  const sql = postgres(config.databaseUrl, { max: 1 });
-
+export const applyMigrations = async (sql: postgres.Sql): Promise<readonly string[]> => {
+  const applied: string[] = [];
   try {
     await sql`SELECT pg_advisory_lock(824_031_420)`;
     await ensureMigrationTable(sql);
-
     for (const migration of await readMigrations()) {
-      if (await applyMigration(sql, migration)) {
-        logger.info("Migration applied", { migration_id: migration.id });
-      }
+      if (await applyMigration(sql, migration)) applied.push(migration.id);
     }
-  } finally {
-    await sql`SELECT pg_advisory_unlock(824_031_420)`;
-    await sql.end({ timeout: 5 });
-  }
+    return applied;
+  } finally { await sql`SELECT pg_advisory_unlock(824_031_420)`; }
+};
+
+export const migrate = async (): Promise<void> => {
+  loadLocalEnvironmentFile(".env.migrate");
+  const config = loadMigrationConfig();
+  const logger = new Logger(config.logLevel, config.environment);
+  const sql = postgres(config.databaseUrl, { max: 1 });
+  try {
+    for (const id of await applyMigrations(sql)) logger.info("Migration applied", {migration_id: id});
+  } finally { await sql.end({timeout: 5}); }
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
