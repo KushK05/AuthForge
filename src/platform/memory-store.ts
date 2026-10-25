@@ -1,4 +1,6 @@
+import { capacityExceeded, invalidCredentials } from "../shared/application/errors.js";
 import type {
+  EventSummary,
   ApiKeyRecord,
   ApplicationSessionRecord,
   ConsoleSessionRecord,
@@ -16,16 +18,16 @@ export class MemoryShowcaseStore implements ShowcaseStore {
   private readonly sessions = new Map<string, ApplicationSessionRecord>();
   private readonly users = new Map<string, DemoUserRecord>();
   private readonly userSessions = new Map<string, DemoUserSessionRecord>();
-  private readonly previousTokenDigests = new Map<string, Buffer>();
 
   public async ready(): Promise<void> {}
 
-  public async createConsoleSession(record: ConsoleSessionRecord): Promise<void> {
+  public async createConsoleSession(record: ConsoleSessionRecord, limit = 20): Promise<void> {
+    if ([...this.consoleSessions.values()].filter(r => active(r.revokedAt, r.expiresAt, new Date())).length >= limit) throw capacityExceeded();
     this.consoleSessions.set(record.id, record);
   }
 
   public async countConsoleSessions(): Promise<number> {
-    return this.consoleSessions.size;
+    return [...this.consoleSessions.values()].filter(r => active(r.revokedAt, r.expiresAt, new Date())).length;
   }
 
   public async findConsoleSession(tokenDigest: Buffer, now: Date): Promise<ConsoleSessionRecord | undefined> {
@@ -47,13 +49,17 @@ export class MemoryShowcaseStore implements ShowcaseStore {
     return [...this.users.values()].find((user) => user.email === email && user.disabledAt === undefined);
   }
   public async findUserById(id: string): Promise<DemoUserRecord | undefined> { const user = this.users.get(id); return user?.disabledAt ? undefined : user; }
-  public async createUserSession(record: DemoUserSessionRecord): Promise<void> { this.userSessions.set(record.id, record); }
+  public async createUserSession(record: DemoUserSessionRecord, limit = 100): Promise<void> {
+    if ([...this.userSessions.values()].filter(r => active(r.revokedAt, r.expiresAt, new Date())).length >= limit) throw capacityExceeded();
+    this.userSessions.set(record.id, record);
+  }
   public async findUserSession(tokenDigest: Buffer, now: Date): Promise<DemoUserSessionRecord | undefined> {
     return [...this.userSessions.values()].find((record) => active(record.revokedAt, record.expiresAt, now) && record.tokenDigest.equals(tokenDigest));
   }
   public async revokeUserSession(id: string, now: Date): Promise<void> { const record = this.userSessions.get(id); if (record && !record.revokedAt) this.userSessions.set(id, { ...record, revokedAt: now }); }
 
-  public async createApiKey(record: ApiKeyRecord): Promise<void> {
+  public async createApiKey(record: ApiKeyRecord, limit = 100): Promise<void> {
+    if (this.apiKeys.size >= limit) throw capacityExceeded();
     this.apiKeys.set(record.id, record);
   }
 
@@ -77,18 +83,21 @@ export class MemoryShowcaseStore implements ShowcaseStore {
     }
   }
 
-  public async createSession(record: ApplicationSessionRecord): Promise<void> {
+  public async createSession(record: ApplicationSessionRecord, limit = 1000): Promise<void> {
+    if ([...this.sessions.values()].filter(r => active(r.revokedAt, r.expiresAt, new Date())).length >= limit) throw capacityExceeded();
+    const owner = this.apiKeys.get(record.apiKeyId);
+    if (!owner || owner.revokedAt) throw invalidCredentials("invalid_api_key");
     this.sessions.set(record.id, record);
   }
 
   public async countSessions(): Promise<number> {
-    return this.sessions.size;
+    return [...this.sessions.values()].filter(r => active(r.revokedAt, r.expiresAt, new Date())).length;
   }
 
   public async findSession(apiKeyId: string, tokenDigest: Buffer, now: Date): Promise<ApplicationSessionRecord | undefined> {
     return [...this.sessions.values()].find(
       (record) =>
-        record.apiKeyId === apiKeyId &&
+        record.apiKeyId === apiKeyId && this.apiKeys.get(apiKeyId)?.revokedAt === undefined &&
         active(record.revokedAt, record.expiresAt, now) &&
         record.tokenDigest.equals(tokenDigest)
     );
@@ -107,24 +116,12 @@ export class MemoryShowcaseStore implements ShowcaseStore {
     return true;
   }
 
-  public async rotateSession(id: string, presentedDigest: Buffer, newDigest: Buffer, now: Date): Promise<boolean> {
-    const record = this.sessions.get(id);
-    if (!record || !active(record.revokedAt, record.expiresAt, now) || !record.tokenDigest.equals(presentedDigest)) {
-      return false;
-    }
-    this.previousTokenDigests.set(id, record.tokenDigest);
-    this.sessions.set(id, { ...record, tokenDigest: newDigest });
+  public async createUserAndSession(user: DemoUserRecord, session: DemoUserSessionRecord, maxUsers: number, maxSessions: number): Promise<boolean> {
+    if ([...this.users.values()].some(u => u.email === user.email)) return false;
+    if (this.users.size >= maxUsers || [...this.userSessions.values()].filter(r => active(r.revokedAt, r.expiresAt, new Date())).length >= maxSessions) throw capacityExceeded();
+    this.users.set(user.id, user);
+    this.userSessions.set(session.id, session);
     return true;
   }
-
-  public async revokeReplayedSession(apiKeyId: string, presentedDigest: Buffer, now: Date): Promise<boolean> {
-    for (const [id, previousDigest] of this.previousTokenDigests) {
-      const record = this.sessions.get(id);
-      if (record?.apiKeyId === apiKeyId && previousDigest.equals(presentedDigest)) {
-        if (record.revokedAt === undefined) this.sessions.set(id, { ...record, revokedAt: now });
-        return true;
-      }
-    }
-    return false;
-  }
+  public async listEventSummaries(): Promise<readonly EventSummary[]> { return []; }
 }

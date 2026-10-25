@@ -65,7 +65,7 @@ resource "aws_secretsmanager_secret" "database_url" {
 
 resource "aws_secretsmanager_secret_version" "database_url" {
   secret_id     = aws_secretsmanager_secret.database_url.id
-  secret_string = "postgres://authforge:${random_password.database.result}@${aws_db_instance.main.address}:5432/authforge?sslmode=require"
+  secret_string = "postgres://authforge:${random_password.database.result}@${aws_db_instance.main.address}:5432/authforge?sslmode=verify-full"
 }
 
 resource "aws_db_subnet_group" "main" {

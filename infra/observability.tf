@@ -52,6 +52,40 @@ resource "aws_cloudwatch_dashboard" "main" {
   dashboard_body = jsonencode({
     widgets = [
       {
+        type = "metric", x = 12, y = 12, width = 12, height = 6
+        properties = {
+          title   = "Redacted artifacts and SES simulator acceptance"
+          region  = var.aws_region, stat = "Sum", period = 60
+          metrics = [["AuthForge/Showcase", "ArtifactWrite"], ["AuthForge/Showcase", "SimulatorEmailSuccess"], ["AuthForge/Showcase", "RedisFailure"]]
+        }
+      },
+      {
+        type = "metric", x = 0, y = 18, width = 12, height = 6
+        properties = {
+          title   = "RDS connections and Redis clients"
+          region  = var.aws_region, stat = "Average", period = 60
+          metrics = [["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", aws_db_instance.main.identifier], ["AWS/ElastiCache", "CurrConnections", "CacheClusterId", "${local.name}-001", "CacheNodeId", "0001"]]
+        }
+      },
+      {
+        type = "metric", x = 12, y = 18, width = 12, height = 6
+        properties = {
+          title   = "API latency and queue age"
+          region  = var.aws_region, stat = "Average", period = 60
+          metrics = [["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", aws_lb.main.arn_suffix], ["AWS/SQS", "ApproximateAgeOfOldestMessage", "QueueName", aws_sqs_queue.events.name]]
+        }
+      },
+      {
+        type = "metric", x = 0, y = 12, width = 12, height = 6
+        properties = {
+          title   = "Worker processing and publication"
+          region  = var.aws_region
+          stat    = "Sum"
+          period  = 60
+          metrics = [["AuthForge/Showcase", "WorkerSuccess"], ["AuthForge/Showcase", "WorkerFailure"], ["AuthForge/Showcase", "PublishFailure"]]
+        }
+      },
+      {
         type = "metric", x = 0, y = 0, width = 12, height = 6
         properties = {
           title  = "Event queue and DLQ"
@@ -106,4 +140,40 @@ resource "aws_cloudwatch_dashboard" "main" {
       }
     ]
   })
+}
+
+resource "aws_cloudwatch_log_metric_filter" "worker" {
+  for_each       = toset(["WorkerSuccess", "WorkerFailure", "PublishFailure", "ArtifactWrite", "SimulatorEmailSuccess"])
+  name           = "${local.name}-${each.key}"
+  log_group_name = aws_cloudwatch_log_group.worker.name
+  pattern        = "{ $.metric = \"${each.key}\" }"
+  metric_transformation {
+    name          = each.key
+    namespace     = "AuthForge/Showcase"
+    value         = "1"
+    default_value = 0
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "redis_failure" {
+  name           = "${local.name}-redis-failure"
+  log_group_name = aws_cloudwatch_log_group.api.name
+  pattern        = "{ $.metric = \"RedisFailure\" }"
+  metric_transformation {
+    name          = "RedisFailure"
+    namespace     = "AuthForge/Showcase"
+    value         = "1"
+    default_value = 0
+  }
+}
+resource "aws_cloudwatch_metric_alarm" "worker_failure" {
+  alarm_name          = "${local.name}-worker-failure"
+  namespace           = "AuthForge/Showcase"
+  metric_name         = "WorkerFailure"
+  statistic           = "Sum"
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 0
+  period              = 60
+  evaluation_periods  = 1
+  treat_missing_data  = "notBreaching"
 }

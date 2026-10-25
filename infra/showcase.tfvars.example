@@ -1,0 +1,12 @@
+# Template only. Do not apply until the paid evaluation is separately approved.
+aws_region = "us-east-1"
+environment = "development"
+domain_name = "authforge.example.com" # Replace with a hostname in an EXISTING owned hosted zone.
+hosted_zone_id = "ZEXAMPLE"
+image_tag = "0123456789abcdef0123456789abcdef01234567" # Actual committed source SHA.
+evaluation_owner = "operator-demo"
+teardown_at = "2026-11-01T00:00:00Z" # Replace with the approved UTC deadline.
+start_services = false
+ses_dkim_domain = "dkim.amazonses.com" # Confirm the correct suffix for the selected region.
+ses_simulator_email = "success@simulator.amazonses.com"
+log_retention_days = 1

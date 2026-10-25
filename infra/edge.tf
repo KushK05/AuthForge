@@ -1,3 +1,6 @@
+data "aws_cloudfront_cache_policy" "disabled" { name = "Managed-CachingDisabled" }
+data "aws_cloudfront_origin_request_policy" "viewer" { name = "Managed-AllViewerExceptHostHeader" }
+
 data "aws_route53_zone" "main" {
   zone_id = var.hosted_zone_id
 }
@@ -20,40 +23,30 @@ resource "aws_acm_certificate" "edge" {
 }
 
 resource "aws_route53_record" "origin_validation" {
-  for_each = {
-    for option in aws_acm_certificate.origin.domain_validation_options : option.domain_name => option
-  }
-
-  zone_id         = data.aws_route53_zone.main.zone_id
-  name            = each.value.resource_record_name
-  type            = each.value.resource_record_type
-  records         = [each.value.resource_record_value]
-  ttl             = 60
-  allow_overwrite = true
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = one(aws_acm_certificate.origin.domain_validation_options).resource_record_name
+  type    = one(aws_acm_certificate.origin.domain_validation_options).resource_record_type
+  records = [one(aws_acm_certificate.origin.domain_validation_options).resource_record_value]
+  ttl     = 60
 }
 
 resource "aws_route53_record" "edge_validation" {
-  for_each = {
-    for option in aws_acm_certificate.edge.domain_validation_options : option.domain_name => option
-  }
-
-  zone_id         = data.aws_route53_zone.main.zone_id
-  name            = each.value.resource_record_name
-  type            = each.value.resource_record_type
-  records         = [each.value.resource_record_value]
-  ttl             = 60
-  allow_overwrite = true
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = one(aws_acm_certificate.edge.domain_validation_options).resource_record_name
+  type    = one(aws_acm_certificate.edge.domain_validation_options).resource_record_type
+  records = [one(aws_acm_certificate.edge.domain_validation_options).resource_record_value]
+  ttl     = 60
 }
 
 resource "aws_acm_certificate_validation" "origin" {
   certificate_arn         = aws_acm_certificate.origin.arn
-  validation_record_fqdns = [for record in aws_route53_record.origin_validation : record.fqdn]
+  validation_record_fqdns = [aws_route53_record.origin_validation.fqdn]
 }
 
 resource "aws_acm_certificate_validation" "edge" {
   provider                = aws.us_east_1
   certificate_arn         = aws_acm_certificate.edge.arn
-  validation_record_fqdns = [for record in aws_route53_record.edge_validation : record.fqdn]
+  validation_record_fqdns = [aws_route53_record.edge_validation.fqdn]
 }
 
 resource "aws_lb" "main" {
@@ -238,8 +231,8 @@ resource "aws_cloudfront_distribution" "main" {
     allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
     cached_methods           = ["GET", "HEAD"]
     compress                 = true
-    cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a1b45cbc1" # Managed-CachingDisabled
-    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac" # Managed-AllViewerExceptHostHeader
+    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.viewer.id
   }
 
   restrictions {

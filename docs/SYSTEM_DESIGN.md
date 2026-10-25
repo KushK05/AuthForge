@@ -8,7 +8,7 @@ AuthForge demonstrates a small authentication workflow and a complete AWS integr
 - A demo application backend uses an API key to create and validate sessions for synthetic subjects.
 - The worker demonstrates durable asynchronous handling through SQS, SES sandbox, S3, and CloudWatch.
 
-There are no developer accounts and no end-user accounts. A subject such as `demo-user-1` is only a synthetic session label.
+There are no developer accounts. Approved synthetic `@authforge.demo` users may register and sign in for the temporary demo lifetime. A subject such as `demo-user-1` can also be an independent synthetic application-session label. Hosted browser sessions and API-key-owned application sessions are separate.
 
 ## System context
 
@@ -78,7 +78,7 @@ Terraform destroy removes the application services, databases, cache, queues, bu
 4. Raw credentials are revealed once and never persisted or logged.
 5. Expired or revoked credentials cannot authenticate.
 6. Every state mutation and its outbox event commit together.
-7. SQS delivery is at-least-once and worker effects are idempotent.
+7. SQS delivery is at-least-once and completed worker events are deduplicated; S3 writes are repeatable and simulator email may repeat across a crash.
 8. Redis loss cannot grant access.
 9. Stack teardown deletes all AuthForge data and resources.
 

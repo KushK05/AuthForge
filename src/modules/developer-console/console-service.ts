@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { AppConfig } from "../../platform/config.js";
 import type { ConsoleRateLimiter } from "../../platform/redis.js";
 import type {
+  EventSummary,
   ApiKeyRecord,
   ApplicationSessionRecord,
   ConsoleSessionRecord,
@@ -30,6 +31,7 @@ export type ConsoleState = Readonly<{
     created_at: string;
     revoked_at?: string;
   }>[];
+  events: readonly EventSummary[];
   sessions: readonly Readonly<{
     id: string;
     api_key_id: string;
@@ -109,7 +111,7 @@ export class ConsoleService {
       csrfDigest: hashOpaqueSecret(csrfToken, this.config.credentialHashKey),
       createdAt,
       expiresAt
-    });
+    }, this.config.maxConsoleSessions);
 
     return { token, csrfToken };
   }
@@ -146,11 +148,13 @@ export class ConsoleService {
   }
 
   public async getState(): Promise<ConsoleState> {
-    const [keys, sessions] = await Promise.all([
+    const [keys, sessions, events] = await Promise.all([
       this.store.listApiKeys(),
-      this.store.listSessions()
+      this.store.listSessions(),
+      this.store.listEventSummaries()
     ]);
     return {
+      events,
       api_keys: keys.map(publicApiKeySummary),
       sessions: sessions.map(publicSessionSummary)
     };

@@ -63,8 +63,8 @@ describe("showcase infrastructure", () => {
   it("encrypts both queues and runs one task per service", () => {
     expect(block("aws_sqs_queue", "events")).toContain("kms_master_key_id");
     expect(block("aws_sqs_queue", "events_dlq")).toContain("kms_master_key_id");
-    expect(block("aws_ecs_service", "api")).toContain("desired_count   = 1");
-    expect(block("aws_ecs_service", "worker")).toContain("desired_count   = 1");
+    expect(block("aws_ecs_service", "api")).toContain("desired_count   = var.start_services ? 1 : 0");
+    expect(block("aws_ecs_service", "worker")).toContain("desired_count   = var.start_services ? 1 : 0");
   });
 
   it("keeps tasks private and never exposes secret values as outputs", () => {
@@ -72,5 +72,20 @@ describe("showcase infrastructure", () => {
     expect(block("aws_ecs_service", "worker")).toContain("assign_public_ip = false");
     expect(terraform).not.toMatch(/output "[^"]+" \{[^}]*random_password/);
     expect(terraform).not.toMatch(/output "[^"]+" \{[^}]*secret_string/);
+  });
+  it("restricts simulator mail in IAM, uses DNS sender verification, and records a teardown owner", () => {
+    expect(terraform).toContain('variable = "ses:FromAddress"');
+    expect(terraform).toContain('variable = "ses:Recipients"');
+    expect(terraform).toContain('resource "aws_route53_record" "ses_dkim"');
+    expect(terraform).toContain('sslmode=verify-full');
+    expect(terraform).toContain('variable "evaluation_owner"');
+    expect(terraform).toContain('variable "teardown_at"');
+  });
+  it("scopes execution-role secret access and KMS decryption to each workload", () => {
+    expect(terraform).not.toContain("shared_secrets");
+    expect(terraform).toContain("resources = each.value.secret_arns");
+    expect(terraform).toContain('"kms:EncryptionContext:SecretARN"');
+    expect(terraform).toContain('"kms:ViaService"');
+    for (const role of ["api", "worker", "migrate"]) expect(terraform).toContain(`aws_iam_role.execution["${role}"].arn`);
   });
 });

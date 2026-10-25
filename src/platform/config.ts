@@ -30,9 +30,14 @@ const configurationSchema = z.object({
   MAX_API_KEYS: z.coerce.number().int().min(1).max(10_000).default(100),
   MAX_SESSIONS: z.coerce.number().int().min(1).max(100_000).default(1_000),
   MAX_CONSOLE_SESSIONS: z.coerce.number().int().min(1).max(10_000).default(20),
-  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
-  KMS_JWT_SIGNING_KEY_ID: optionalString,
-  AWS_KMS_ENDPOINT_URL: optionalUrl,
+  MAX_REQUEST_BODY_BYTES: z.coerce.number().int().min(1024).max(65536).default(16384),
+  MAX_FAILED_CONSOLE_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),
+  CONSOLE_ATTEMPT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3600).default(60),
+  MAX_DEMO_USERS: z.coerce.number().int().min(1).max(1000).default(100),
+  MAX_USER_SESSIONS: z.coerce.number().int().min(1).max(1000).default(100),
+  TRUST_PROXY: z.enum(["true", "false"]).default("false"),
+  AWS_S3_ENDPOINT_URL: optionalUrl,
+  AWS_SES_ENDPOINT_URL: optionalUrl,
   SECURE_COOKIES: z.enum(["true", "false"]).default("false")
 });
 
@@ -59,9 +64,15 @@ export type AppConfig = Readonly<{
   maxApiKeys: number;
   maxSessions: number;
   maxConsoleSessions: number;
-  accessTokenTtlSeconds: number;
-  kmsJwtSigningKeyId?: string;
-  awsKmsEndpointUrl?: string;
+  maxRequestBodyBytes?: number;
+  maxFailedConsoleAttempts?: number;
+  consoleAttemptWindowSeconds?: number;
+  maxDemoUsers?: number;
+  maxUserSessions?: number;
+  workerVisibilityTimeoutSeconds?: number;
+  trustProxy?: boolean;
+  awsS3EndpointUrl?: string;
+  awsSesEndpointUrl?: string;
   secureCookies: boolean;
 }>;
 
@@ -77,6 +88,18 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     throw new Error(`Invalid configuration: ${fields}`);
   }
 
+  const data = parsed.data;
+  if (data.DEFAULT_SESSION_TTL_SECONDS > data.MAX_SESSION_TTL_SECONDS) throw new Error("Default session TTL exceeds maximum");
+  if ((data.NODE_ENV === "production" || data.NODE_ENV === "staging") && (data.SECURE_COOKIES !== "true" || !data.CONSOLE_ORIGIN.startsWith("https://"))) throw new Error("Deployed environments require HTTPS and secure cookies");
+  if (data.NODE_ENV === "production" || data.NODE_ENV === "staging") {
+    if (new URL(data.DATABASE_URL).searchParams.get("sslmode") !== "verify-full") throw new Error("Deployed PostgreSQL requires sslmode=verify-full");
+    if (!data.REDIS_URL.startsWith("rediss://")) throw new Error("Deployed Redis requires TLS");
+    if (data.AWS_SQS_ENDPOINT_URL || data.AWS_S3_ENDPOINT_URL || data.AWS_SES_ENDPOINT_URL) throw new Error("Deployed environments cannot use emulator endpoints");
+  }
+  if (new URL(data.CONSOLE_ORIGIN).origin !== data.CONSOLE_ORIGIN) throw new Error("CONSOLE_ORIGIN must be an exact origin without a path");
+  if (data.SHOWCASE_SES_SIMULATOR_EMAIL && !/^(success|bounce|complaint|ooto|suppressionlist)@simulator\.amazonses\.com$/.test(data.SHOWCASE_SES_SIMULATOR_EMAIL)) throw new Error("SES recipient must be an AWS mailbox simulator address");
+  if (Boolean(data.SHOWCASE_SES_FROM_EMAIL) !== Boolean(data.SHOWCASE_SES_SIMULATOR_EMAIL)) throw new Error("Configure both SES sender and simulator recipient");
+  if (data.SHOWCASE_QUEUE_URL && !data.SHOWCASE_S3_BUCKET) throw new Error("SHOWCASE_S3_BUCKET is required with SHOWCASE_QUEUE_URL");
   return {
     environment: parsed.data.NODE_ENV,
     host: parsed.data.HOST,
@@ -100,9 +123,63 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     maxApiKeys: parsed.data.MAX_API_KEYS,
     maxSessions: parsed.data.MAX_SESSIONS,
     maxConsoleSessions: parsed.data.MAX_CONSOLE_SESSIONS,
-    accessTokenTtlSeconds: parsed.data.ACCESS_TOKEN_TTL_SECONDS,
-    ...(parsed.data.KMS_JWT_SIGNING_KEY_ID ? { kmsJwtSigningKeyId: parsed.data.KMS_JWT_SIGNING_KEY_ID } : {}),
-    ...(parsed.data.AWS_KMS_ENDPOINT_URL ? { awsKmsEndpointUrl: parsed.data.AWS_KMS_ENDPOINT_URL } : {}),
+    maxRequestBodyBytes: parsed.data.MAX_REQUEST_BODY_BYTES,
+    maxFailedConsoleAttempts: parsed.data.MAX_FAILED_CONSOLE_ATTEMPTS,
+    consoleAttemptWindowSeconds: parsed.data.CONSOLE_ATTEMPT_WINDOW_SECONDS,
+    maxDemoUsers: parsed.data.MAX_DEMO_USERS,
+    maxUserSessions: parsed.data.MAX_USER_SESSIONS,
+    trustProxy: parsed.data.TRUST_PROXY === "true",
+    ...(parsed.data.AWS_S3_ENDPOINT_URL ? { awsS3EndpointUrl: parsed.data.AWS_S3_ENDPOINT_URL } : {}),
+    ...(parsed.data.AWS_SES_ENDPOINT_URL ? { awsSesEndpointUrl: parsed.data.AWS_SES_ENDPOINT_URL } : {}),
     secureCookies: parsed.data.SECURE_COOKIES === "true"
+  };
+};
+
+export type MigrationConfig = Pick<AppConfig, "environment" | "logLevel" | "databaseUrl">;
+export type WorkerConfig = MigrationConfig & Pick<AppConfig,
+  "awsRegion" | "awsSqsEndpointUrl" | "awsS3EndpointUrl" | "awsSesEndpointUrl" |
+  "showcaseQueueUrl" | "showcaseS3Bucket" | "showcaseS3KmsKeyId" |
+  "showcaseSesFromEmail" | "showcaseSesSimulatorEmail" | "workerVisibilityTimeoutSeconds"
+>;
+
+const migrationSchema = configurationSchema.pick({NODE_ENV: true, LOG_LEVEL: true, DATABASE_URL: true});
+const workerSchema = configurationSchema.pick({
+  NODE_ENV: true, LOG_LEVEL: true, DATABASE_URL: true, AWS_REGION: true,
+  AWS_SQS_ENDPOINT_URL: true, AWS_S3_ENDPOINT_URL: true, AWS_SES_ENDPOINT_URL: true,
+  SHOWCASE_QUEUE_URL: true, SHOWCASE_S3_BUCKET: true, SHOWCASE_S3_KMS_KEY_ID: true,
+  SHOWCASE_SES_FROM_EMAIL: true, SHOWCASE_SES_SIMULATOR_EMAIL: true
+});
+const parseRoleConfig = <T extends z.ZodType>(schema: T, environment: NodeJS.ProcessEnv): z.output<T> => {
+  const result = schema.safeParse(environment);
+  if (!result.success) throw new Error(`Invalid configuration: ${result.error.issues.map(issue => issue.path.join(".")).join(", ")}`);
+  return result.data;
+};
+const migrationValues = (data: z.output<typeof migrationSchema>): MigrationConfig => {
+  if ((data.NODE_ENV === "production" || data.NODE_ENV === "staging") && new URL(data.DATABASE_URL).searchParams.get("sslmode") !== "verify-full") throw new Error("Deployed PostgreSQL requires sslmode=verify-full");
+  return {environment: data.NODE_ENV, logLevel: data.LOG_LEVEL, databaseUrl: data.DATABASE_URL};
+};
+export const loadMigrationConfig = (environment: NodeJS.ProcessEnv = process.env): MigrationConfig =>
+  migrationValues(parseRoleConfig(migrationSchema, environment));
+
+export const loadWorkerConfig = (environment: NodeJS.ProcessEnv = process.env): WorkerConfig => {
+  const data = parseRoleConfig(workerSchema, environment);
+  const base = migrationValues(data);
+  if (base.environment === "production" || base.environment === "staging") {
+    if (data.AWS_SQS_ENDPOINT_URL || data.AWS_S3_ENDPOINT_URL || data.AWS_SES_ENDPOINT_URL) throw new Error("Deployed environments cannot use emulator endpoints");
+    if (!data.SHOWCASE_QUEUE_URL || !data.SHOWCASE_S3_BUCKET || !data.SHOWCASE_S3_KMS_KEY_ID || !data.SHOWCASE_SES_FROM_EMAIL || !data.SHOWCASE_SES_SIMULATOR_EMAIL) throw new Error("Deployed worker requires queue, artifact encryption, and SES simulator configuration");
+  }
+  if (data.SHOWCASE_SES_SIMULATOR_EMAIL && !/^(success|bounce|complaint|ooto|suppressionlist)@simulator\.amazonses\.com$/.test(data.SHOWCASE_SES_SIMULATOR_EMAIL)) throw new Error("SES recipient must be an AWS mailbox simulator address");
+  if (Boolean(data.SHOWCASE_SES_FROM_EMAIL) !== Boolean(data.SHOWCASE_SES_SIMULATOR_EMAIL)) throw new Error("Configure both SES sender and simulator recipient");
+  if (data.SHOWCASE_QUEUE_URL && !data.SHOWCASE_S3_BUCKET) throw new Error("SHOWCASE_S3_BUCKET is required with SHOWCASE_QUEUE_URL");
+  return {
+    ...base, awsRegion: data.AWS_REGION,
+    ...(data.AWS_SQS_ENDPOINT_URL ? {awsSqsEndpointUrl: data.AWS_SQS_ENDPOINT_URL} : {}),
+    ...(data.AWS_S3_ENDPOINT_URL ? {awsS3EndpointUrl: data.AWS_S3_ENDPOINT_URL} : {}),
+    ...(data.AWS_SES_ENDPOINT_URL ? {awsSesEndpointUrl: data.AWS_SES_ENDPOINT_URL} : {}),
+    ...(data.SHOWCASE_QUEUE_URL ? {showcaseQueueUrl: data.SHOWCASE_QUEUE_URL} : {}),
+    ...(data.SHOWCASE_S3_BUCKET ? {showcaseS3Bucket: data.SHOWCASE_S3_BUCKET} : {}),
+    ...(data.SHOWCASE_S3_KMS_KEY_ID ? {showcaseS3KmsKeyId: data.SHOWCASE_S3_KMS_KEY_ID} : {}),
+    ...(data.SHOWCASE_SES_FROM_EMAIL ? {showcaseSesFromEmail: data.SHOWCASE_SES_FROM_EMAIL} : {}),
+    ...(data.SHOWCASE_SES_SIMULATOR_EMAIL ? {showcaseSesSimulatorEmail: data.SHOWCASE_SES_SIMULATOR_EMAIL} : {})
   };
 };

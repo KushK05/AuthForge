@@ -48,6 +48,7 @@ export type RedisClientLike = Readonly<{
   expire(key: string, seconds: number): Promise<number>;
   del(key: string): Promise<number>;
   ping(): Promise<string>;
+  eval?(script: string, count: number, key: string, ttl: number): Promise<unknown>;
 }>;
 
 export class RedisConsoleRateLimiter implements ConsoleRateLimiter {
@@ -75,6 +76,10 @@ export class RedisConsoleRateLimiter implements ConsoleRateLimiter {
   public async recordFailure(ip: string): Promise<void> {
     const key = `${this.keyPrefix}${ip}`;
     try {
+      if (this.redis.eval) {
+        await this.redis.eval("local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; return n", 1, key, this.windowSeconds);
+        return;
+      }
       const count = await this.redis.incr(key);
       if (count === 1) {
         await this.redis.expire(key, this.windowSeconds);

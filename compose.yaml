@@ -11,7 +11,7 @@ services:
       timeout: 3s
       retries: 10
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
@@ -24,32 +24,35 @@ services:
       timeout: 3s
       retries: 10
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
 
   localstack:
     image: localstack/localstack:3.8
     environment:
       SERVICES: sqs,ses,s3,kms,secretsmanager
       AWS_DEFAULT_REGION: us-east-1
+      LOCALSTACK_HOST: localstack:4566
+      SQS_ENDPOINT_STRATEGY: path
     ports:
-      - "4566:4566"
+      - "127.0.0.1:4566:4566"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/authforge-ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
 
   migrate:
     build:
       context: .
     command: npm run migrate
     env_file:
-      - path: .env
+      - path: .env.migrate
         required: false
     environment:
+      NODE_ENV: development
       DATABASE_URL: postgres://authforge:authforge@postgres:5432/authforge
-      REDIS_URL: redis://redis:6379
-      CONSOLE_ACCESS_CODE: ${CONSOLE_ACCESS_CODE:-local-showcase-console-access-code}
-      CREDENTIAL_HASH_KEY: ${CREDENTIAL_HASH_KEY:-local-showcase-credential-hash-key-32}
-      CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://localhost:8080}
-      SECURE_COOKIES: "false"
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,40 +65,51 @@ services:
       - path: .env
         required: false
     environment:
+      NODE_ENV: development
       HOST: 0.0.0.0
       DATABASE_URL: postgres://authforge:authforge@postgres:5432/authforge
       REDIS_URL: redis://redis:6379
       CONSOLE_ACCESS_CODE: ${CONSOLE_ACCESS_CODE:-local-showcase-console-access-code}
       CREDENTIAL_HASH_KEY: ${CREDENTIAL_HASH_KEY:-local-showcase-credential-hash-key-32}
-      CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://localhost:8080}
+      CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://127.0.0.1:8080}
       SECURE_COOKIES: "false"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
 
   worker:
     build:
       context: .
     command: npm run start:worker
     env_file:
-      - path: .env
+      - path: .env.worker
         required: false
     environment:
+      NODE_ENV: development
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_SQS_ENDPOINT_URL: http://localstack:4566
+      AWS_S3_ENDPOINT_URL: http://localstack:4566
+      AWS_SES_ENDPOINT_URL: http://localstack:4566
+      SHOWCASE_QUEUE_URL: http://localstack:4566/queue/us-east-1/000000000000/authforge-events
+      SHOWCASE_S3_BUCKET: authforge-events
+      SHOWCASE_SES_FROM_EMAIL: sender@authforge.demo
+      SHOWCASE_SES_SIMULATOR_EMAIL: success@simulator.amazonses.com
       DATABASE_URL: postgres://authforge:authforge@postgres:5432/authforge
-      REDIS_URL: redis://redis:6379
-      CONSOLE_ACCESS_CODE: ${CONSOLE_ACCESS_CODE:-local-showcase-console-access-code}
-      CREDENTIAL_HASH_KEY: ${CREDENTIAL_HASH_KEY:-local-showcase-credential-hash-key-32}
-      CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://localhost:8080}
-      SECURE_COOKIES: "false"
     depends_on:
+      localstack:
+        condition: service_healthy
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres-data:
