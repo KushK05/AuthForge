@@ -5,11 +5,12 @@ coverage/
 .env.local
 !.env.example
 
-infra/.terraform/
+**/.terraform/
 *.tfstate
 *.tfstate.*
 *.tfplan
 *.tfvars
+infra/classroom/*.zip
 test-results/
 playwright-report/
 

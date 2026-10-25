@@ -1,5 +1,11 @@
 # Testing and quality gates
 
+## Classroom AWS checks
+
+The active deployment root is `infra/classroom`. Its mocked test verifies one small EC2 instance, one private disposable RDS instance, restricted ingress, a force-destroy S3 bucket, one-day CloudWatch retention, and SES-only IAM. It creates no AWS resources. Run `npm run classroom:check`; after provider initialization, formatting, validation, and mocked tests run in networking-disabled Terraform containers.
+
+For an approved live demonstration, `npm run classroom:aws -- smoke` must prove hosted authentication, console access, keys, sessions, ownership, revocation, direct worker completion, an S3 artifact, SES simulator acceptance, and CloudWatch API/worker streams. `status` lists the five demonstrated resources and deadline. After `destroy`, independently verify the EC2 instance/EIP, RDS instance/snapshots, S3 bucket/objects, CloudWatch log group, and project IAM/VPC resources are absent.
+
 ## Test layers
 
 | Layer | Purpose | Required examples |

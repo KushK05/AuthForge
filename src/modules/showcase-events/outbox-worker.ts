@@ -126,6 +126,10 @@ export class ShowcaseOutboxWorker {
   }
 
   public async runOnce(): Promise<void> {
+    if (this.config.classroomDirectEvents) {
+      await this.runDirectOnce();
+      return;
+    }
     if (!this.config.showcaseQueueUrl) {
       this.logger.warn("Showcase worker is disabled because SHOWCASE_QUEUE_URL is unset");
       return;
@@ -175,6 +179,24 @@ export class ShowcaseOutboxWorker {
         this.logger.info("Showcase event processed", { event_id: event.event_id, metric: "WorkerSuccess", value: 1 });
       } catch {
         this.logger.warn("Showcase event processing failed", { metric: "WorkerFailure", value: 1 });
+      }
+    }
+  }
+
+  private async runDirectOnce(): Promise<void> {
+    for (const outboxEvent of await this.outbox.pending(25)) {
+      try {
+        const event = eventSchema.parse(JSON.parse(toQueueMessage(outboxEvent)));
+        if (event.event_type === "showcase.test.failure") throw new Error("Controlled synthetic failure");
+        const processed = await this.outbox.processOnce(event.event_id, "classroom-artifact-writer", async () => {
+          await this.writeArtifact(event);
+          await this.sendSimulatorEmail(event);
+        });
+        if (!processed) continue;
+        await this.outbox.markPublished(outboxEvent.id, new Date());
+        this.logger.info("Classroom event processed", {event_id: event.event_id, metric: "WorkerSuccess", value: 1});
+      } catch {
+        this.logger.warn("Classroom event processing failed", {event_id: outboxEvent.id, metric: "WorkerFailure", value: 1});
       }
     }
   }

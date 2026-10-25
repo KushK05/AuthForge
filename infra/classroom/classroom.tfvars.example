@@ -1,0 +1,7 @@
+aws_region = "us-east-1"
+allowed_cidr = "203.0.113.10/32" # Replace with the classroom public IPv4/32.
+ses_from_email = "verified-demo@example.com" # Must already be verified in SES.
+ses_simulator_email = "success@simulator.amazonses.com"
+evaluation_owner = "operator-class-demo"
+teardown_at = "2026-10-27T06:00:00Z" # Future UTC time, no more than 12 hours after deploy.
+source_sha = "0123456789abcdef0123456789abcdef01234567"

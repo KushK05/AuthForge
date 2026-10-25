@@ -4,7 +4,19 @@ This is an append-only log. Status values: `accepted`, `superseded`, `proposed`,
 
 ## Active decision
 
-ADR-010 is the active project scope. It retains the temporary AWS evaluation constraints from ADR-009 while allowing approved demo-user registration and sign-in.
+ADR-011 is the active classroom deployment scope. It retains the AuthForge demo behavior from ADR-010 while replacing the larger evaluation deployment for the teacher showcase.
+
+## ADR-011: Five-service classroom deployment
+
+- Status: accepted
+- Date: 2026-10-26
+- Relationship: Supersedes the deployed AWS service set in ADR-005 and ADR-009 for the classroom showcase only. Product behavior and local SQS journey remain available for development evidence.
+- Context: The college provides a limited $50 credit and the teacher requires visible use of EC2, RDS, SES, and one or two additional services. The larger evaluation stack adds cost and services that are not grading requirements.
+- Decision: Deploy the API, worker, and disposable Redis process on one EC2 instance; use RDS PostgreSQL as authority; process the transactional outbox directly in classroom worker mode; write redacted artifacts to S3; call only the SES mailbox simulator through a pre-verified sender; and send API/worker/bootstrap logs to CloudWatch. IAM and VPC are supporting controls, not showcase services. Do not deploy ECS, ElastiCache, SQS, ALB, WAF, NAT Gateway, CloudFront, Route 53, KMS, ECR, or Secrets Manager in the classroom stack.
+- Alternatives: The full evaluation stack was rejected for this demonstration because it spends credits on unrequested services. Local-only evidence was rejected because the teacher requires visible AWS resources. SQS was omitted to keep the visible service count to five; the local integration journey still demonstrates the queue design.
+- Consequences: The classroom deployment is cheaper and easier to explain, but it is intentionally not production architecture. HTTP is restricted to an explicitly configured classroom CIDR, Redis is local and disposable, Terraform state contains generated temporary secrets, and direct outbox processing has no DLQ.
+- Migration and rollback: This is a separate disposable Terraform root under `infra/classroom`. Destroying it deletes the RDS database without a final snapshot, the EC2 instance, S3 objects and bucket, and CloudWatch logs. The earlier full-stack Terraform remains reference material and is not invoked by classroom automation.
+- Verification: Unit tests cover classroom configuration and direct event effects. Mocked Terraform tests assert exactly one EC2 instance, one RDS instance, SES/S3/CloudWatch resources, no excluded expensive services, restricted ingress, and destructive teardown settings. A future approved smoke test must verify all five services and immediate destroy.
 
 ## ADR-001: Modular monolith with event-driven worker
 

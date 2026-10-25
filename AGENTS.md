@@ -12,18 +12,17 @@ When documents conflict, resolve them in this order: `docs/SECURITY.md`, `docs/A
 - Approved `@authforge.demo` users may register and sign in with Argon2id password hashes held only for the demo lifetime. Do not add public onboarding, email verification, password reset, profiles, roles, permissions, social login, MFA, billing, or long-lived user identity.
 - Never use real personal, customer, or business data.
 
-## Non-negotiable AWS evaluation architecture
+## Non-negotiable AWS classroom architecture
 
 - Build one API and one worker from the same TypeScript and Fastify codebase.
-- Deploy the API and worker on ECS Fargate from images in ECR.
-- Route public traffic through Route 53, CloudFront, ACM, an Application Load Balancer, and AWS WAF.
-- Use RDS PostgreSQL for temporary authoritative user, API-key, and session records.
-- Use ElastiCache Redis only for rate limits, short-lived validation cache, and revocation hints.
-- Use SQS with a DLQ for synthetic lifecycle events. The worker writes redacted event artifacts to S3 and exercises SES only in sandbox or simulator mode.
-- Use KMS, Secrets Manager, CloudWatch, IAM, and Terraform as specified in `docs/AWS_DEPLOYMENT.md`.
+- Run the API, worker, and disposable Redis process on one small EC2 instance.
+- Use RDS PostgreSQL for temporary authoritative user, API-key, session, and outbox records.
+- Process outbox events directly in classroom mode. Write redacted event artifacts to S3 and exercise SES only with the mailbox simulator.
+- Send API and worker logs to CloudWatch. Use IAM, a narrow VPC/security-group boundary, and Terraform as supporting controls.
+- Do not deploy ECS, ElastiCache, SQS, ALB, WAF, NAT Gateway, CloudFront, Route 53, KMS, ECR, or Secrets Manager for the classroom showcase.
 - Destroy the entire environment after evaluation. Do not retain snapshots, backups, buckets, queues, logs, secrets, or databases.
 
-The AWS services are evaluation requirements. Do not remove them merely because the product functionality is small. Keep each integration minimal and directly visible in the showcase.
+The five demonstrated services are EC2, RDS, SES, S3, and CloudWatch. Keep each integration minimal and directly visible in the showcase. The older full-stack Terraform remains reference material and must not be applied for the classroom demo.
 
 ## Change discipline
 

@@ -1,5 +1,7 @@
 # Temporary AWS deployment
 
+> **Active classroom scope:** ADR-011 replaces the deployable topology for the teacher showcase with EC2, RDS, SES, S3, and CloudWatch. Use only `infra/classroom` and `npm run classroom:aws`. The larger topology below is historical design evidence and must not be applied for this classroom demonstration.
+
 ## Deployment goal
 
 Provision the complete AWS evaluation stack, demonstrate it with synthetic data, and destroy it after the showcase. This is one temporary environment, not a development, staging, and production platform.
@@ -115,6 +117,8 @@ SES verifies the dedicated infrastructure domain `mail.<showcase-hostname>` usin
 Use `npm run infra:check` for formatting, validation, and five mocked Terraform test scenarios. After the initial plugin download (`bash scripts/infra-check.sh --init`), checks run in a container with networking disabled and no mounted AWS credentials. Mocked test applies create fake state only; they do not provision AWS resources. They test topology and variable logic, not actual AWS permissions, quotas, TLS handshakes, or SES verification.
 
 See [AWS_RUNBOOK.md](AWS_RUNBOOK.md) for the future deployment, migration, smoke, and teardown sequence. All real AWS actions remain separate, require cost approval, and have not been executed.
+
+For the active low-cost teacher showcase, use only `infra/classroom` and the `classroom:aws` command described in `AWS_RUNBOOK.md`. It demonstrates EC2, RDS, SES, S3, and CloudWatch. The larger topology in this document and the older `infra` root are retained as reference evidence and must not be applied for the classroom demo. The classroom command does not store credentials in GitHub, schedule cloud-side teardown, impose a hard spending cap, or remove the requirement to inspect plans and verify destruction.
 
 ## Task-specific configuration
 
