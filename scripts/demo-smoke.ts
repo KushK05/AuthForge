@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { loadLocalEnvironmentFile } from "../src/platform/config.js";
 
 loadLocalEnvironmentFile();
-const base = "http://127.0.0.1:8080";
+const base = process.env.AUTHFORGE_BASE_URL ?? "http://127.0.0.1:8080";
 const origin = {origin: base};
 async function request(path: string, method = "GET", body?: unknown, headers: Record<string, string> = {}) {
   const response = await fetch(base + path, {method, headers: {...origin, ...(body ? {"content-type": "application/json"} : {}), ...headers}, ...(body ? {body: JSON.stringify(body)} : {})});

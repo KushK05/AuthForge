@@ -1,5 +1,21 @@
 # Software architecture
 
+## Active classroom deployment
+
+```text
+Restricted teacher IP -> EC2 (API + worker + disposable Redis)
+                            |
+                       RDS PostgreSQL
+                            |
+                     direct outbox worker
+                       /           \
+              S3 artifacts      SES simulator
+
+              EC2 container logs -> CloudWatch
+```
+
+This is the active teacher-showcase topology under ADR-011. IAM and VPC are supporting controls. The older full evaluation topology below remains design reference material and is not deployed by `classroom:aws`.
+
 ## Prototype shape
 
 Deploy one public API process and one private worker process from the same repository and container image. The API serves both the developer console and JSON endpoints. The worker publishes outbox records to SQS and consumes synthetic lifecycle events.

@@ -1,0 +1,16 @@
+#!/bin/bash
+set -euo pipefail
+dnf install -y docker unzip
+systemctl enable --now docker
+mkdir -p /opt/authforge
+aws s3 cp "s3://${bucket}/${source_key}" /tmp/authforge.zip --region "${region}"
+unzip -q /tmp/authforge.zip -d /opt/authforge
+cd /opt/authforge
+docker build -t authforge-classroom .
+echo '${api_env}' | base64 -d > /etc/authforge-api.env
+echo '${worker_env}' | base64 -d > /etc/authforge-worker.env
+chmod 600 /etc/authforge-api.env /etc/authforge-worker.env
+docker run -d --restart always --name authforge-redis redis:7-alpine redis-server --save '' --appendonly no
+docker run --rm --network host --env-file /etc/authforge-worker.env authforge-classroom node --import tsx src/platform/database/migrate.ts
+docker run -d --restart always --network host --name authforge-api --env-file /etc/authforge-api.env --log-driver awslogs --log-opt awslogs-region=${region} --log-opt awslogs-group=${log_group} --log-opt awslogs-stream=api authforge-classroom
+docker run -d --restart always --network host --name authforge-worker --env-file /etc/authforge-worker.env --log-driver awslogs --log-opt awslogs-region=${region} --log-opt awslogs-group=${log_group} --log-opt awslogs-stream=worker authforge-classroom node --import tsx src/worker/main.ts

@@ -63,5 +63,8 @@ describe("loadConfig", () => {
     expect(() => loadWorkerConfig({...worker, AWS_S3_ENDPOINT_URL: "http://localstack:4566"})).toThrow("emulator");
     expect(() => loadWorkerConfig({...worker, SHOWCASE_SES_SIMULATOR_EMAIL: "someone@example.com"})).toThrow("simulator");
     expect(() => loadWorkerConfig({...worker, DATABASE_URL: validEnvironment.DATABASE_URL})).toThrow("verify-full");
+    const classroom = loadWorkerConfig({...worker, CLASSROOM_DIRECT_EVENTS: "true", SHOWCASE_QUEUE_URL: "", SHOWCASE_S3_KMS_KEY_ID: ""});
+    expect(classroom.classroomDirectEvents).toBe(true);
+    expect(classroom).not.toHaveProperty("showcaseQueueUrl");
   });
 });

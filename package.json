@@ -21,7 +21,9 @@
     "test:integration": "AUTHFORGE_LOCAL_INTEGRATION=true vitest run tests/integration",
     "demo:check": "tsx scripts/demo-smoke.ts",
     "infra:check": "bash scripts/infra-check.sh",
-    "aws:migrate": "tsx scripts/aws-migrate.ts"
+    "aws:migrate": "tsx scripts/aws-migrate.ts",
+    "classroom:aws": "tsx scripts/classroom-aws.ts",
+    "classroom:check": "bash scripts/classroom-infra-check.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",

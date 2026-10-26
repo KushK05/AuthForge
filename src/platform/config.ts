@@ -21,6 +21,7 @@ const configurationSchema = z.object({
   SHOWCASE_S3_KMS_KEY_ID: optionalString,
   SHOWCASE_SES_FROM_EMAIL: optionalEmail,
   SHOWCASE_SES_SIMULATOR_EMAIL: optionalEmail,
+  CLASSROOM_DIRECT_EVENTS: z.enum(["true", "false"]).default("false"),
   CONSOLE_ACCESS_CODE: z.string().min(16),
   CREDENTIAL_HASH_KEY: z.string().min(32),
   CONSOLE_ORIGIN: z.string().url().default("http://127.0.0.1:8080"),
@@ -140,7 +141,7 @@ export type WorkerConfig = MigrationConfig & Pick<AppConfig,
   "awsRegion" | "awsSqsEndpointUrl" | "awsS3EndpointUrl" | "awsSesEndpointUrl" |
   "showcaseQueueUrl" | "showcaseS3Bucket" | "showcaseS3KmsKeyId" |
   "showcaseSesFromEmail" | "showcaseSesSimulatorEmail" | "workerVisibilityTimeoutSeconds"
->;
+> & Readonly<{classroomDirectEvents?: boolean}>;
 
 const migrationSchema = configurationSchema.pick({NODE_ENV: true, LOG_LEVEL: true, DATABASE_URL: true});
 const workerSchema = configurationSchema.pick({
@@ -148,6 +149,7 @@ const workerSchema = configurationSchema.pick({
   AWS_SQS_ENDPOINT_URL: true, AWS_S3_ENDPOINT_URL: true, AWS_SES_ENDPOINT_URL: true,
   SHOWCASE_QUEUE_URL: true, SHOWCASE_S3_BUCKET: true, SHOWCASE_S3_KMS_KEY_ID: true,
   SHOWCASE_SES_FROM_EMAIL: true, SHOWCASE_SES_SIMULATOR_EMAIL: true
+  , CLASSROOM_DIRECT_EVENTS: true
 });
 const parseRoleConfig = <T extends z.ZodType>(schema: T, environment: NodeJS.ProcessEnv): z.output<T> => {
   const result = schema.safeParse(environment);
@@ -166,7 +168,8 @@ export const loadWorkerConfig = (environment: NodeJS.ProcessEnv = process.env): 
   const base = migrationValues(data);
   if (base.environment === "production" || base.environment === "staging") {
     if (data.AWS_SQS_ENDPOINT_URL || data.AWS_S3_ENDPOINT_URL || data.AWS_SES_ENDPOINT_URL) throw new Error("Deployed environments cannot use emulator endpoints");
-    if (!data.SHOWCASE_QUEUE_URL || !data.SHOWCASE_S3_BUCKET || !data.SHOWCASE_S3_KMS_KEY_ID || !data.SHOWCASE_SES_FROM_EMAIL || !data.SHOWCASE_SES_SIMULATOR_EMAIL) throw new Error("Deployed worker requires queue, artifact encryption, and SES simulator configuration");
+    const completeEffects = data.SHOWCASE_S3_BUCKET && data.SHOWCASE_SES_FROM_EMAIL && data.SHOWCASE_SES_SIMULATOR_EMAIL;
+    if (data.CLASSROOM_DIRECT_EVENTS === "true" ? !completeEffects : (!data.SHOWCASE_QUEUE_URL || !data.SHOWCASE_S3_KMS_KEY_ID || !completeEffects)) throw new Error("Deployed worker requires its complete event configuration");
   }
   if (data.SHOWCASE_SES_SIMULATOR_EMAIL && !/^(success|bounce|complaint|ooto|suppressionlist)@simulator\.amazonses\.com$/.test(data.SHOWCASE_SES_SIMULATOR_EMAIL)) throw new Error("SES recipient must be an AWS mailbox simulator address");
   if (Boolean(data.SHOWCASE_SES_FROM_EMAIL) !== Boolean(data.SHOWCASE_SES_SIMULATOR_EMAIL)) throw new Error("Configure both SES sender and simulator recipient");
@@ -180,6 +183,7 @@ export const loadWorkerConfig = (environment: NodeJS.ProcessEnv = process.env): 
     ...(data.SHOWCASE_S3_BUCKET ? {showcaseS3Bucket: data.SHOWCASE_S3_BUCKET} : {}),
     ...(data.SHOWCASE_S3_KMS_KEY_ID ? {showcaseS3KmsKeyId: data.SHOWCASE_S3_KMS_KEY_ID} : {}),
     ...(data.SHOWCASE_SES_FROM_EMAIL ? {showcaseSesFromEmail: data.SHOWCASE_SES_FROM_EMAIL} : {}),
-    ...(data.SHOWCASE_SES_SIMULATOR_EMAIL ? {showcaseSesSimulatorEmail: data.SHOWCASE_SES_SIMULATOR_EMAIL} : {})
+    ...(data.SHOWCASE_SES_SIMULATOR_EMAIL ? {showcaseSesSimulatorEmail: data.SHOWCASE_SES_SIMULATOR_EMAIL} : {}),
+    classroomDirectEvents: data.CLASSROOM_DIRECT_EVENTS === "true"
   };
 };

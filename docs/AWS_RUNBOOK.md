@@ -5,30 +5,33 @@ This is preparation for a separately approved, billable evaluation. No command b
 ## Prepare without cloud resources
 
 1. Run `npm run build`, `npm run lint`, `npm test`, and the local journeys in `TESTING.md`.
-2. Run `bash scripts/infra-check.sh --init` once to download provider plugins. Subsequent `npm run infra:check` uses networking-disabled containers and mocked providers only.
-3. Copy `infra/showcase.tfvars.example` to an ignored `infra/showcase.tfvars`. Replace the reserved example hostname with a hostname in an existing owned public Route 53 zone. Do not buy a domain for local preparation.
-4. Set a full committed source SHA, synthetic operator label, explicit teardown deadline, and region-appropriate SES DKIM suffix. Leave `start_services=false`.
-5. Obtain an approved deployment role/profile for the selected AWS account. Do not use application task roles or real user data for deployment.
+2. Initialize and run the formatting, validation, and mocked tests in `infra/classroom` without AWS credentials.
+3. Copy `infra/classroom/classroom.tfvars.example` to ignored `infra/classroom/classroom.tfvars`. Set the exact commit SHA, restricted classroom IPv4 `/32`, pre-verified SES sender, synthetic operator, and deadline within 12 hours.
+4. Obtain an approved college AWS profile. Never put credentials or state in GitHub.
 
-## Future approved deployment
+### Portable classroom command
 
-1. Review `terraform -chdir=infra plan -var-file=showcase.tfvars` and the expected cost before applying. The stopped-service setting still creates billable infrastructure when applied.
-2. After explicit approval, apply the reviewed plan with services stopped. Keep Terraform state secure: it contains generated secrets. Do not commit state or plan files.
-3. Build the shared image for `linux/amd64`, tag it with the configured commit SHA, authenticate to the exported ECR repository, and push that exact tag. All image and AWS actions require the approved account/profile.
-4. Wait for ACM DNS certificate validation and SES DNS identity verification. SES uses a fixed synthetic sender on `mail.<showcase-hostname>`; only simulator destinations are allowed. Check the SES sending quota and sandbox state. Do not request production email access or verify a real recipient.
-5. Run the guarded helper only after approval: set `AWS_PROFILE`, `AUTHFORGE_EXPECTED_ACCOUNT_ID`, and `AUTHFORGE_ALLOW_BILLABLE_AWS=yes`, then run `npm run aws:migrate`. It verifies the account and SES identity before launching one private Fargate migration task and checks its exit status. It does not enable the services.
-6. Review another plan with `start_services=true`; apply only after migrations succeed. Wait for one healthy API task and one running worker task.
-7. Follow the mandatory journey in `TESTING.md` using the temporary HTTPS URL and synthetic data. Verify forwarded IPs, cookie flags, CSRF, ownership, revocation, all CloudWatch widgets, queue delivery, S3 redaction, simulator SES acceptance, and the controlled failure reaching the DLQ. Record evidence without credential values.
-8. Record actual resource identifiers and outputs securely for the teardown audit. Do not retain raw secrets in evidence.
+The active classroom root is `infra/classroom`; the older `infra` root is reference material and must not be applied. The repository includes `npm run classroom:aws -- preflight|plan|deploy|status|smoke|destroy-plan|destroy` for another macOS or Linux machine. Install Node.js, npm, Terraform, AWS CLI v2, Git, and curl, then configure an approved AWS profile. Copy `infra/classroom/classroom.tfvars.example` to ignored `infra/classroom/classroom.tfvars` and fill it locally. Credentials, account variables, state, plan files, and generated secrets never enter GitHub.
 
-## Future teardown
+`preflight` validates the tools, clean committed source, exact source SHA, restricted classroom IPv4 CIDR, a teardown deadline no more than 12 hours away, selected AWS account, and Terraform configuration. It creates no resources. `plan` verifies the SES sender and displays a saved deployment plan without creating resources. Only after a person reviews that concrete plan does `deploy`, guarded by `AUTHFORGE_ALLOW_BILLABLE_AWS=yes` and `AUTHFORGE_CONFIRM=DEPLOY`, apply it and wait for EC2 health. Run `smoke` for the synthetic journey and `status` to list the five resource identifiers.
 
-1. Stop writes and review a destroy plan while state and resource identifiers are available.
-2. Destroy the reviewed stack. S3 and ECR are configured for deletion with contents; secrets delete immediately; RDS skips its final snapshot; Redis has no snapshots.
-3. Verify there are no remaining project databases or snapshots, cache clusters or snapshots, queues/DLQ, buckets/objects, secrets, ECS tasks/services, ECR repository/images, load balancer, WAF resources, CloudFront distribution, project DNS records/certificates, log groups, or project networking resources. An empty Terraform state alone is not sufficient evidence.
-4. Verify the project KMS alias is gone and the key is pending deletion in the approved seven-day path. Never delete the shared hosted zone or any unrelated resource.
-5. Remove local secret-bearing state, state backups, plan files, and any temporary credentials after the resource audit. Retain only redacted evaluation evidence allowed by the teardown contract; do not retain application data.
+Run `destroy-plan` immediately after the demonstration and review the resources it will remove. Then run `destroy` with `AUTHFORGE_CONFIRM=DESTROY`; it applies only that saved plan and requires empty Terraform state. Teardown remains usable if source files changed. Independently verify EC2, RDS, S3, CloudWatch, and project IAM/VPC resources are absent. The same working directory and its local state must remain available through teardown. `teardown_at` is a guard and tag, not an automatic timer.
+
+## Future approved classroom deployment
+
+1. Confirm the college credit balance, selected account/profile, SES sender verification, classroom IPv4 `/32`, and teardown deadline.
+2. Run `npm run classroom:aws -- preflight`; it creates no resources.
+3. Run `npm run classroom:aws -- plan` and review the exact EC2, public IPv4, RDS, S3, SES, and CloudWatch plan. Only after approval, set `AUTHFORGE_ALLOW_BILLABLE_AWS=yes` and `AUTHFORGE_CONFIRM=DEPLOY`, then run `npm run classroom:aws -- deploy`.
+4. Run `npm run classroom:aws -- status` and `npm run classroom:aws -- smoke`. Show all five service resources without displaying secrets or state.
+5. Use synthetic data and the SES mailbox simulator only. Never widen ingress.
+
+## Future classroom teardown
+
+1. Stop writes and run `npm run classroom:aws -- destroy-plan` with the same approved profile and account guard.
+2. Review the exact teardown plan, set `AUTHFORGE_CONFIRM=DESTROY`, and run `npm run classroom:aws -- destroy` immediately.
+3. Verify the EC2 instance/EIP, RDS instance/snapshots, S3 bucket/objects, CloudWatch log group, and project IAM/VPC resources are absent. Empty state alone is insufficient.
+4. Delete local state, backups, plans, `.tfvars`, and temporary credentials only after the audit. Retain no application data.
 
 ## Verification status
 
-Formatting/validation and mocked Terraform tests provide local evidence only. Real AWS IAM, quotas, certificate handshakes, DNS ownership, simulator delivery, deployment, and actual teardown require the separately approved evaluation. No AWS resources have been created during preparation.
+Formatting, validation, and mocked Terraform tests provide local evidence only. Real AWS IAM, quotas, SES simulator delivery, EC2 bootstrap, RDS TLS, CloudWatch delivery, and teardown require the separately approved classroom evaluation. No AWS resources have been created during preparation.

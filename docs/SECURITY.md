@@ -1,5 +1,13 @@
 # Security
 
+## Classroom deployment boundary
+
+The active classroom stack exposes HTTP port 8080 only to the supplied teacher/demo public IPv4 CIDR; `0.0.0.0/0` is rejected. It is a short-lived classroom demonstration, not a public production endpoint. EC2 runs the API, direct-outbox worker, and disposable Redis container. RDS is not publicly accessible and accepts PostgreSQL only from the EC2 security group.
+
+Generated database, console, and digest secrets exist only in ignored local Terraform state and EC2 user data/environment files during the demonstration. S3 blocks public access and uses server-side encryption. The EC2 role is limited to classroom bucket objects, the classroom CloudWatch log group, the fixed SES sender, and simulator recipient. No real recipient is permitted.
+
+The classroom URL uses restricted HTTP because the five-service limit excludes ACM, Route 53, CloudFront, and ALB. Never widen ingress, enter real data, or present this endpoint as production-ready. Destroy it immediately after the teacher demonstration.
+
 ## Security posture
 
 AuthForge is a short-lived AWS showcase and must never be presented as a public production identity service. Only synthetic demonstration identifiers and approved `@authforge.demo` accounts may enter the system.

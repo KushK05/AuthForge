@@ -60,3 +60,25 @@ describe("outbox publication failures", () => {
     expect(logs.join("")).not.toContain("showcase.session.refreshed");
   });
 });
+
+describe("classroom direct event processing", () => {
+  it("writes S3 and SES effects without using SQS and then marks the event published", async () => {
+    const event = {id: "00000000-0000-4000-8000-000000000011", eventType: "showcase.session.created", eventVersion: 1,
+      payload: {session_id: "00000000-0000-4000-8000-000000000012"}, createdAt: new Date("2026-10-26T00:00:00Z")};
+    const commands: string[] = []; const published: string[] = [];
+    const config = loadWorkerConfig({NODE_ENV: "test", DATABASE_URL: "postgres://test:test@localhost/test", CLASSROOM_DIRECT_EVENTS: "true",
+      SHOWCASE_S3_BUCKET: "classroom", SHOWCASE_SES_FROM_EMAIL: "classroom@school.example", SHOWCASE_SES_SIMULATOR_EMAIL: "success@simulator.amazonses.com"});
+    const worker = new ShowcaseOutboxWorker(config, {
+      pending: async () => published.length ? [] : [event],
+      discard: async () => {}, markPublished: async id => {published.push(id);},
+      processOnce: async (_id, _consumer, effect) => {await effect(); return true;}
+    }, {info: () => {}, warn: () => {}, error: () => {}}, {
+      sqs: {send: async command => {commands.push(command.constructor.name); return {};}},
+      s3: {send: async command => {commands.push(command.constructor.name); return {};}},
+      ses: {send: async command => {commands.push(command.constructor.name); return {};}}
+    });
+    await worker.runOnce();
+    expect(commands).toEqual(["PutObjectCommand", "SendEmailCommand"]);
+    expect(published).toEqual([event.id]);
+  });
+});

@@ -9,16 +9,17 @@ AuthForge is a temporary AWS authentication showcase with four product capabilit
 
 It is not a public production service. It accepts only approved `@authforge.demo` identities and synthetic demonstration data, and all data is deleted after the evaluation.
 
-## Evaluation requirement
+## Classroom evaluation requirement
 
-The product surface is intentionally small, but the deployment must demonstrate the previously selected AWS services:
+The active low-cost deployment demonstrates five AWS services:
 
-- Route 53, CloudFront, ACM, an Application Load Balancer, and AWS WAF.
-- Amazon ECS on Fargate for one API task and one worker task.
-- Amazon RDS for PostgreSQL and Amazon ElastiCache for Redis.
-- Amazon SQS with a dead-letter queue and Amazon SES in sandbox or simulator mode.
-- Amazon S3, AWS KMS, AWS Secrets Manager, Amazon CloudWatch, Amazon ECR, and IAM.
-- Terraform for repeatable provisioning and complete teardown.
+- Amazon EC2 runs the API, worker, and disposable Redis container.
+- Amazon RDS for PostgreSQL stores temporary synthetic state.
+- Amazon SES uses only the mailbox simulator.
+- Amazon S3 stores redacted synthetic artifacts.
+- Amazon CloudWatch receives API and worker logs.
+
+IAM, VPC controls, and Terraform support repeatable deployment and complete teardown. The older large evaluation root remains reference material and is not deployed for the classroom showcase.
 
 RDS, Redis, S3, queues, logs, and other resources may contain synthetic showcase data only. Nothing is retained after the temporary AWS environment is destroyed. No real user or business data may be entered.
 
@@ -92,3 +93,5 @@ For automated verification, follow [TESTING.md](docs/TESTING.md). Real AWS deplo
 ## Future AWS evaluation
 
 Run `npm run infra:check` to validate the prepared infrastructure locally. The first run needs provider initialization: `bash scripts/infra-check.sh --init`. These checks do not deploy anything. The [AWS runbook](docs/AWS_RUNBOOK.md) explains the separately approved future migration, deployment, simulator verification, and teardown steps. Real AWS operation remains unverified until that evaluation.
+
+For the approved low-cost teacher showcase, use the separate five-service classroom workflow in [AWS_RUNBOOK.md](docs/AWS_RUNBOOK.md). It deploys only EC2, RDS, SES, S3, and CloudWatch through `infra/classroom`; credentials, account variables, state, and billable confirmation stay outside GitHub. The older full-stack root is reference material and must not be applied for this demo.
