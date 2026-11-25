@@ -2,21 +2,9 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { MemoryShowcaseStore } from "../../src/platform/memory-store.js";
-import type { ApiKeyRecord, ApplicationSessionRecord, ConsoleSessionRecord } from "../../src/platform/store.js";
+import type { ApiKeyRecord, ApplicationSessionRecord } from "../../src/platform/store.js";
 
-describe("ShowcaseStore (console sessions and API keys)", () => {
-  const sampleConsoleSession = (overrides?: Partial<ConsoleSessionRecord>): ConsoleSessionRecord => {
-    const now = new Date();
-    return {
-      id: randomUUID(),
-      tokenDigest: Buffer.from("token-digest-1"),
-      csrfDigest: Buffer.from("csrf-digest-1"),
-      createdAt: now,
-      expiresAt: new Date(now.getTime() + 900_000),
-      ...overrides
-    };
-  };
-
+describe("ShowcaseStore (API keys)", () => {
   const sampleApiKey = (overrides?: Partial<ApiKeyRecord>): ApiKeyRecord => {
     const now = new Date();
     return {
@@ -28,51 +16,6 @@ describe("ShowcaseStore (console sessions and API keys)", () => {
       ...overrides
     };
   };
-
-  describe("Console Sessions", () => {
-    it("creates and finds an active console session by token digest", async () => {
-      const store = new MemoryShowcaseStore();
-      const record = sampleConsoleSession();
-      await store.createConsoleSession(record);
-
-      const found = await store.findConsoleSession(record.tokenDigest, new Date());
-      expect(found).toBeDefined();
-      expect(found?.id).toBe(record.id);
-      expect(found?.csrfDigest).toEqual(record.csrfDigest);
-    });
-
-    it("does not find expired console sessions", async () => {
-      const store = new MemoryShowcaseStore();
-      const past = new Date(Date.now() - 10_000);
-      const record = sampleConsoleSession({
-        createdAt: new Date(past.getTime() - 900_000),
-        expiresAt: past
-      });
-      await store.createConsoleSession(record);
-
-      const found = await store.findConsoleSession(record.tokenDigest, new Date());
-      expect(found).toBeUndefined();
-    });
-
-    it("does not find revoked console sessions", async () => {
-      const store = new MemoryShowcaseStore();
-      const record = sampleConsoleSession();
-      await store.createConsoleSession(record);
-
-      await store.revokeConsoleSession(record.id, new Date());
-
-      const found = await store.findConsoleSession(record.tokenDigest, new Date());
-      expect(found).toBeUndefined();
-    });
-
-    it("counts active console sessions accurately", async () => {
-      const store = new MemoryShowcaseStore();
-      expect(await store.countConsoleSessions()).toBe(0);
-
-      await store.createConsoleSession(sampleConsoleSession());
-      expect(await store.countConsoleSessions()).toBe(1);
-    });
-  });
 
   describe("API Keys", () => {
     it("creates and finds an active API key by secret digest", async () => {
@@ -135,5 +78,22 @@ describe("ShowcaseStore (console sessions and API keys)", () => {
       const foundAfter = await store.findSession(apiKey.id, session.tokenDigest, new Date());
       expect(foundAfter).toBeUndefined();
     });
+  });
+});
+
+describe("ShowcaseStore (user summaries)", () => {
+  const action = (userId: string) => ({ id: randomUUID(), userId, purpose: "verify_email" as const, tokenDigest: Buffer.from(randomUUID()), createdAt: new Date(), expiresAt: new Date(Date.now() + 60_000) });
+
+  it("lists users newest first with only public fields, respecting the limit", async () => {
+    const store = new MemoryShowcaseStore();
+    const ids = [randomUUID(), randomUUID(), randomUUID()];
+    for (const [index, id] of ids.entries()) {
+      await store.createPendingUser({ id, email: `user-${index}@authforge.demo`, passwordHash: "$argon2id$hash", createdAt: new Date(Date.UTC(2026, 0, index + 1)) }, action(id), 10);
+    }
+    const all = await store.listUserSummaries(10);
+    expect(all.map(user => user.email)).toEqual(["user-2@authforge.demo", "user-1@authforge.demo", "user-0@authforge.demo"]);
+    expect(all[0]).toEqual({ id: ids[2], email: "user-2@authforge.demo", email_verified: false, created_at: "2026-01-03T00:00:00.000Z" });
+    expect(JSON.stringify(all)).not.toContain("argon2");
+    expect(await store.listUserSummaries(2)).toHaveLength(2);
   });
 });

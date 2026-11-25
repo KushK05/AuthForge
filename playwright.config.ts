@@ -15,7 +15,6 @@ export default defineConfig({
       DATABASE_URL: process.env.AUTHFORGE_TEST_DATABASE_URL ?? "postgres://authforge:authforge@127.0.0.1:55432/authforge",
       REDIS_URL: process.env.AUTHFORGE_TEST_REDIS_URL ?? "redis://127.0.0.1:56379",
       CONSOLE_ORIGIN: "http://127.0.0.1:8081",
-      CONSOLE_ACCESS_CODE: "test-console-access-code",
       CREDENTIAL_HASH_KEY: randomUUID() + randomUUID(), SECURE_COOKIES: "false"
     }
   }

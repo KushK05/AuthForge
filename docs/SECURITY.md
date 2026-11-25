@@ -4,9 +4,9 @@
 
 The active classroom stack exposes HTTP port 8080 only to the operator-supplied IPv4 CIDR in `allowed_cidr`. A classroom `/32` is preferred; `0.0.0.0/0` is permitted for a public demo under ADR-013, and IPv6 or non-CIDR values are rejected. It is a short-lived classroom demonstration, not a public production endpoint. EC2 runs the API, direct-outbox worker, and disposable Redis container. RDS is not publicly accessible and accepts PostgreSQL only from the EC2 security group.
 
-Generated database, console, and digest secrets exist only in ignored local Terraform state and EC2 user data/environment files during the demonstration. S3 blocks public access and uses server-side encryption. The EC2 role is limited to classroom bucket objects, the classroom CloudWatch log group, the fixed SES sender, the simulator recipient, and one explicitly configured SES-verified test inbox. No arbitrary recipient is permitted.
+Generated database and digest secrets exist only in ignored local Terraform state and EC2 user data/environment files during the demonstration. S3 blocks public access and uses server-side encryption. The EC2 role is limited to classroom bucket objects, the classroom CloudWatch log group, the fixed SES sender, the simulator recipient, and one explicitly configured SES-verified test inbox. No arbitrary recipient is permitted.
 
-The classroom URL uses plain HTTP because the five-service limit excludes ACM, Route 53, CloudFront, and ALB. With public ingress, the console access code, cookies, and demo passwords cross the internet unencrypted, so treat them as observable, use only synthetic data, and rely on the existing login and registration rate limits. RDS, S3, and SES boundaries do not change. Never widen ingress beyond port 8080, enter real data, or present this endpoint as production-ready. Destroy it immediately after the teacher demonstration.
+The classroom URL uses plain HTTP because the five-service limit excludes ACM, Route 53, CloudFront, and ALB. With public ingress, cookies and demo passwords cross the internet unencrypted, so treat them as observable, use only synthetic data, and rely on the existing login and registration rate limits. RDS, S3, and SES boundaries do not change. Never widen ingress beyond port 8080, enter real data, or present this endpoint as production-ready. Destroy it immediately after the teacher demonstration.
 
 ## Security posture
 
@@ -18,13 +18,13 @@ Do not collect names, real email addresses, phone numbers, payment data, product
 
 | Threat | Required control |
 | --- | --- |
-| Console exposure | Strong Secrets Manager access code, HTTP-only cookie, exact Origin allowlist, required CSRF token, and Redis-backed failed-attempt limits. |
+| Console exposure | Verified demo-user browser session (the console is shared, ADR-014), HTTP-only cookie, exact Origin allowlist, required CSRF token, and Redis-backed sign-in attempt limits. Only the holder of the single test inbox can verify an account. |
 | API-key leakage | Secure generation, one-time reveal, keyed digest in PostgreSQL, display prefix, revocation, log redaction, and `Cache-Control: no-store`. |
 | Session-token leakage | Opaque random token, one-time reveal, keyed digest, short TTL, ownership checks, and revocation. |
 | Demo-account takeover | Approved-domain registration, Argon2id password hashing, generic sign-in failure, HTTP-only browser cookie, exact Origin, CSRF, and short session expiry. |
 | Cross-key access | Resolve session ownership in PostgreSQL and make other keys' sessions undiscoverable. |
 | Injection and XSS | Request schemas, parameterized SQL, output encoding, strict content security policy, and bounded input lengths. |
-| CSRF | Exact trusted Origin plus `X-CSRF-Token` matched to the console session for every cookie-authenticated mutation. |
+| CSRF | Exact trusted Origin plus `X-CSRF-Token` matched to the browser session for every cookie-authenticated mutation. |
 | Network exposure | CloudFront and ALB HTTPS, ACM certificates, WAF managed rules, private ECS/RDS/Redis subnets, and narrow security groups. |
 | AWS data leak | Least-privilege IAM, KMS encryption, secret references, redacted queue/artifact payloads, and no public S3 access. |
 | Resource exhaustion | WAF rules plus bounded request body, TTL, key count, session count, and authentication attempts. |
@@ -37,7 +37,7 @@ Do not collect names, real email addresses, phone numbers, payment data, product
 - Use a Secrets Manager value as the keyed hashing input for credential digests.
 - Compare digests with timing-safe primitives.
 - Return raw API keys and session tokens only once with `Cache-Control: no-store`.
-- Never put raw API keys, session tokens, passwords, subjects, or access codes in SQS, S3, logs, metrics, or traces. SES account-action messages may contain only the one-time verification/reset link sent to the configured test inbox; lifecycle messages remain on the mailbox simulator.
+- Never put raw API keys, session tokens, passwords, subjects, or cookies in SQS, S3, logs, metrics, or traces. SES account-action messages may contain only the one-time verification/reset link sent to the configured test inbox; lifecycle messages remain on the mailbox simulator.
 - Revoking an API key revokes its sessions in the same PostgreSQL transaction.
 
 ## AWS security baseline
@@ -86,6 +86,6 @@ The SES sender is a fixed synthetic infrastructure address under a DNS-verified 
 
 ## Workload secret isolation
 
-The API receives `DATABASE_URL`, `CONSOLE_ACCESS_CODE`, and `CREDENTIAL_HASH_KEY`. The worker and run-once migration task receive only `DATABASE_URL`. Each workload has its own ECS execution role with access to its own log group and required Secrets Manager ARNs. Execution-role KMS decryption is restricted to Secrets Manager and those secret ARNs using the [AWS-documented service and encryption-context conditions](https://docs.aws.amazon.com/secretsmanager/latest/userguide/security-encryption.html); application task roles cannot fetch authentication secrets.
+The API receives `DATABASE_URL` and `CREDENTIAL_HASH_KEY`. The worker and run-once migration task receive only `DATABASE_URL`. Each workload has its own ECS execution role with access to its own log group and required Secrets Manager ARNs. Execution-role KMS decryption is restricted to Secrets Manager and those secret ARNs using the [AWS-documented service and encryption-context conditions](https://docs.aws.amazon.com/secretsmanager/latest/userguide/security-encryption.html); application task roles cannot fetch authentication secrets.
 
 Worker configuration validates only database and event settings. Migration configuration validates only database and runtime logging settings. They do not require or return API authentication secrets or Redis settings. Local Compose uses separate optional `.env.worker` and `.env.migrate` files, with `.env` reserved for the API; all are excluded from Git.

@@ -3,18 +3,17 @@ import type {
   EventSummary,
   ApiKeyRecord,
   ApplicationSessionRecord,
-  ConsoleSessionRecord,
   DemoUserRecord,
   DemoUserEmailActionRecord,
   DemoUserSessionRecord,
-  ShowcaseStore
+  ShowcaseStore,
+  UserSummary
 } from "./store.js";
 
 const active = (revokedAt: Date | undefined, expiresAt: Date, now: Date): boolean =>
   revokedAt === undefined && expiresAt > now;
 
 export class MemoryShowcaseStore implements ShowcaseStore {
-  private readonly consoleSessions = new Map<string, ConsoleSessionRecord>();
   private readonly apiKeys = new Map<string, ApiKeyRecord>();
   private readonly sessions = new Map<string, ApplicationSessionRecord>();
   private readonly users = new Map<string, DemoUserRecord>();
@@ -22,26 +21,6 @@ export class MemoryShowcaseStore implements ShowcaseStore {
   private readonly userEmailActions = new Map<string, DemoUserEmailActionRecord>();
 
   public async ready(): Promise<void> {}
-
-  public async createConsoleSession(record: ConsoleSessionRecord, limit = 20): Promise<void> {
-    if ([...this.consoleSessions.values()].filter(r => active(r.revokedAt, r.expiresAt, new Date())).length >= limit) throw capacityExceeded();
-    this.consoleSessions.set(record.id, record);
-  }
-
-  public async countConsoleSessions(): Promise<number> {
-    return [...this.consoleSessions.values()].filter(r => active(r.revokedAt, r.expiresAt, new Date())).length;
-  }
-
-  public async findConsoleSession(tokenDigest: Buffer, now: Date): Promise<ConsoleSessionRecord | undefined> {
-    return [...this.consoleSessions.values()].find(
-      (record) => active(record.revokedAt, record.expiresAt, now) && record.tokenDigest.equals(tokenDigest)
-    );
-  }
-
-  public async revokeConsoleSession(id: string, now: Date): Promise<void> {
-    const record = this.consoleSessions.get(id);
-    if (record && record.revokedAt === undefined) this.consoleSessions.set(id, { ...record, revokedAt: now });
-  }
 
   public async findUserByEmail(email: string): Promise<DemoUserRecord | undefined> {
     return [...this.users.values()].find((user) => user.email === email && user.disabledAt === undefined);
@@ -161,4 +140,11 @@ export class MemoryShowcaseStore implements ShowcaseStore {
   }
 
   public async listEventSummaries(): Promise<readonly EventSummary[]> { return []; }
+  public async listUserSummaries(limit: number): Promise<readonly UserSummary[]> {
+    return [...this.users.values()]
+      .filter(user => user.disabledAt === undefined)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(0, limit)
+      .map(user => ({ id: user.id, email: user.email, email_verified: user.emailVerifiedAt !== undefined, created_at: user.createdAt.toISOString() }));
+  }
 }

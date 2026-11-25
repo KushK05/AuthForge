@@ -9,25 +9,26 @@ import { PostgresShowcaseStore } from "../../src/platform/postgres-store.js";
 import { RedisConsoleRateLimiter } from "../../src/platform/redis.js";
 import { RedisValidationHints } from "../../src/platform/validation-hints.js";
 import { hashOpaqueSecret } from "../../src/shared/crypto/opaque-secret.js";
+import { signInDemoUser } from "../support/demo-user.js";
 import { FakeAuthEmailSender } from "../support/fake-auth-email-sender.js";
 
 // Only run against the explicitly provisioned disposable local test stack.
 const enabled = process.env.AUTHFORGE_LOCAL_INTEGRATION === "true";
 describe.skipIf(!enabled)("real PostgreSQL and Redis journey", () => {
-  const config = loadConfig({NODE_ENV: "test", LOG_LEVEL: "error", DATABASE_URL: process.env.AUTHFORGE_TEST_DATABASE_URL ?? "postgres://authforge:authforge@127.0.0.1:55432/authforge", REDIS_URL: process.env.AUTHFORGE_TEST_REDIS_URL ?? "redis://127.0.0.1:56379", CONSOLE_ACCESS_CODE: "test-console-access-code", CREDENTIAL_HASH_KEY: "test-credential-hash-key-at-least-32", AUTH_EMAIL_FROM_EMAIL: "sender@authforge.demo", AUTH_EMAIL_TEST_RECIPIENT: "learner@authforge.demo"});
+  const config = loadConfig({NODE_ENV: "test", LOG_LEVEL: "error", DATABASE_URL: process.env.AUTHFORGE_TEST_DATABASE_URL ?? "postgres://authforge:authforge@127.0.0.1:55432/authforge", REDIS_URL: process.env.AUTHFORGE_TEST_REDIS_URL ?? "redis://127.0.0.1:56379", CREDENTIAL_HASH_KEY: "test-credential-hash-key-at-least-32", AUTH_EMAIL_FROM_EMAIL: "sender@authforge.demo", AUTH_EMAIL_TEST_RECIPIENT: "learner@authforge.demo"});
   const sql = postgres(config.databaseUrl, {max: 1, onnotice: () => {}});
   const store = new PostgresShowcaseStore(sql);
   const redis = new Redis(config.redisUrl, {lazyConnect: true, maxRetriesPerRequest: 1});
   const limiter = new RedisConsoleRateLimiter(redis, 2, 1, `test:${randomUUID()}:`);
   const hints = new RedisValidationHints(redis);
-  const app = buildApi(config, store, limiter, undefined, hints, new FakeAuthEmailSender());
+  const sender = new FakeAuthEmailSender();
+  const app = buildApi(config, store, limiter, undefined, hints, sender);
   let headers: {origin: string; cookie: string; "x-csrf-token": string};
   beforeAll(async () => {
     await applyMigrations(sql);
     await redis.connect();
-    const response = await app.inject({method: "POST", url: "/v1/console/session", payload: {access_code: config.consoleAccessCode}});
-    expect(response.statusCode).toBe(200);
-    headers = {origin: config.consoleOrigin, cookie: String(response.headers["set-cookie"]), "x-csrf-token": response.json().csrf_token};
+    const {cookie, csrf} = await signInDemoUser(app, sender, config.consoleOrigin, `${randomUUID()}@authforge.demo`);
+    headers = {origin: config.consoleOrigin, cookie, "x-csrf-token": csrf};
   });
   afterAll(async () => {await app.close(); await sql.end(); redis.disconnect();});
 
@@ -79,6 +80,16 @@ describe.skipIf(!enabled)("real PostgreSQL and Redis journey", () => {
     const createdAt = new Date();
     await expect(store.createPendingUser(user, {id: randomUUID(), userId: randomUUID(), purpose: "verify_email", tokenDigest: Buffer.alloc(32), createdAt, expiresAt: new Date(createdAt.getTime() + 60000)}, 100)).rejects.toBeDefined();
     expect(await store.findUserByEmail(user.email)).toBeUndefined();
+  });
+
+  it("lists user summaries from PostgreSQL without password material", async () => {
+    const summaries = await store.listUserSummaries(200);
+    expect(summaries.length).toBeGreaterThan(0);
+    for (const summary of summaries) expect(Object.keys(summary).sort()).toEqual(["created_at", "email", "email_verified", "id"]);
+    expect(summaries.some(summary => summary.email_verified)).toBe(true);
+    const times = summaries.map(summary => Date.parse(summary.created_at));
+    expect([...times].sort((a, b) => b - a)).toEqual(times);
+    expect(await store.listUserSummaries(1)).toHaveLength(1);
   });
 
   it("uses real Redis counters with TTL and fails closed on connection loss", async () => {

@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildApi } from "../../src/api/app.js";
 import type { AppConfig } from "../../src/platform/config.js";
 import { MemoryShowcaseStore } from "../../src/platform/memory-store.js";
+import { MemoryConsoleRateLimiter } from "../../src/platform/redis.js";
+import { signInDemoUser } from "../support/demo-user.js";
+import { FakeAuthEmailSender } from "../support/fake-auth-email-sender.js";
 
 const config: AppConfig = {
   environment: "test",
@@ -12,7 +15,6 @@ const config: AppConfig = {
   databaseUrl: "postgres://authforge:authforge@localhost:5432/authforge",
   redisUrl: "redis://localhost:6379",
   awsRegion: "us-east-1",
-  consoleAccessCode: "showcase-console-access-code",
   credentialHashKey: "showcase-credential-hash-key-at-least-32",
   consoleOrigin: "http://127.0.0.1:8080",
   defaultSessionTtlSeconds: 900,
@@ -20,7 +22,8 @@ const config: AppConfig = {
   maxSubjectLength: 128,
   maxApiKeys: 10,
   maxSessions: 20,
-  maxConsoleSessions: 20,
+  authEmailFromEmail: "sender@authforge.demo",
+  authEmailTestRecipient: "learner@authforge.demo",
   secureCookies: false
 };
 
@@ -34,18 +37,15 @@ describe("showcase API", () => {
   });
 
   const createApp = () => {
-    const app = buildApi(config, new MemoryShowcaseStore());
+    const sender = new FakeAuthEmailSender();
+    const app = buildApi(config, new MemoryShowcaseStore(), new MemoryConsoleRateLimiter(100), undefined, undefined, sender);
     apps.push(app);
-    return app;
+    return { app, sender, signIn: () => signInDemoUser(app, sender, config.consoleOrigin) };
   };
 
   it("creates and validates a session through the console-created API key", async () => {
-    const app = createApp();
-    const login = await app.inject({ method: "POST", url: "/v1/console/session", payload: { access_code: config.consoleAccessCode } });
-    expect(login.statusCode).toBe(200);
-    expect(login.headers["cache-control"]).toBe("no-store");
-    const cookie = login.headers["set-cookie"];
-    const csrf = login.json().csrf_token as string;
+    const { app, signIn } = createApp();
+    const { cookie, csrf } = await signIn();
 
     const keyResponse = await app.inject({
       method: "POST",
@@ -76,12 +76,18 @@ describe("showcase API", () => {
   });
 
   it("rejects console mutations without CSRF proof", async () => {
-    const app = createApp();
-    const login = await app.inject({ method: "POST", url: "/v1/console/session", payload: { access_code: config.consoleAccessCode } });
+    const { app, signIn } = createApp();
+    const { cookie, csrf } = await signIn();
+    const wrong = await app.inject({ method: "POST", url: "/v1/api-keys", headers: { ...origin, cookie, "x-csrf-token": "csrf_wrong" }, payload: { name: "blocked" } });
+    expect(wrong.statusCode).toBe(403);
+    expect(wrong.json().error.code).toBe("invalid_csrf");
+    const untrusted = await app.inject({ method: "POST", url: "/v1/api-keys", headers: { origin: "https://untrusted.example", cookie, "x-csrf-token": csrf }, payload: { name: "blocked" } });
+    expect(untrusted.statusCode).toBe(403);
+    expect(untrusted.json().error.code).toBe("invalid_csrf");
     const response = await app.inject({
       method: "POST",
       url: "/v1/api-keys",
-      headers: { origin: config.consoleOrigin, cookie: login.headers["set-cookie"] },
+      headers: { origin: config.consoleOrigin, cookie },
       payload: { name: "blocked" }
     });
     expect(response.statusCode).toBe(403);
@@ -89,13 +95,12 @@ describe("showcase API", () => {
   });
 
   it("revokes an API key and its sessions", async () => {
-    const app = createApp();
-    const login = await app.inject({ method: "POST", url: "/v1/console/session", payload: { access_code: config.consoleAccessCode } });
-    const csrf = login.json().csrf_token as string;
+    const { app, signIn } = createApp();
+    const { cookie, csrf } = await signIn();
     const keyResponse = await app.inject({
       method: "POST",
       url: "/v1/api-keys",
-      headers: { ...origin, cookie: login.headers["set-cookie"], "x-csrf-token": csrf },
+      headers: { ...origin, cookie, "x-csrf-token": csrf },
       payload: { name: "revoked" }
     });
     const key = keyResponse.json();
@@ -109,7 +114,7 @@ describe("showcase API", () => {
     const revoke = await app.inject({
       method: "DELETE",
       url: `/v1/api-keys/${key.id}`,
-      headers: { ...origin, cookie: login.headers["set-cookie"], "x-csrf-token": csrf }
+      headers: { ...origin, cookie, "x-csrf-token": csrf }
     });
     expect(revoke.statusCode).toBe(204);
 
@@ -122,89 +127,83 @@ describe("showcase API", () => {
     expect(validation.statusCode).toBe(401);
   });
 
-  it("throttles repeated invalid console access with 429 rate_limited", async () => {
-    const app = createApp();
-    for (let i = 0; i < 5; i++) {
-      const response = await app.inject({
-        method: "POST",
-        url: "/v1/console/session",
-        payload: { access_code: "wrong-code" }
-      });
+  it("rejects console routes without a browser session", async () => {
+    const { app } = createApp();
+    for (const request of [
+      { method: "GET" as const, url: "/v1/console/state" },
+      { method: "GET" as const, url: "/v1/api-keys" },
+      { method: "POST" as const, url: "/v1/api-keys", payload: { name: "x" } },
+      { method: "DELETE" as const, url: "/v1/api-keys/6f1d1c7e-7d62-4a5c-9d57-2d9b1f1a7a01" },
+      { method: "DELETE" as const, url: "/v1/console/sessions/6f1d1c7e-7d62-4a5c-9d57-2d9b1f1a7a01" }
+    ]) {
+      const response = await app.inject({ ...request, headers: origin });
       expect(response.statusCode).toBe(401);
-      expect(response.json().error.code).toBe("invalid_console_access");
+      expect(response.json().error.code).toBe("invalid_user_credentials");
     }
-
-    const throttled = await app.inject({
-      method: "POST",
-      url: "/v1/console/session",
-      payload: { access_code: "wrong-code" }
-    });
-    expect(throttled.statusCode).toBe(429);
-    expect(throttled.json().error.code).toBe("rate_limited");
   });
 
-  it("fails closed with 503 dependency_unavailable when rate limiter is unavailable", async () => {
+  it("does not expose the removed console access-code routes", async () => {
+    const { app } = createApp();
+    for (const method of ["POST", "DELETE"] as const) {
+      const response = await app.inject({ method, url: "/v1/console/session", headers: origin, ...(method === "POST" ? { payload: { access_code: "anything-at-all-123" } } : {}) });
+      expect(response.statusCode).toBe(404);
+    }
+  });
+
+  it("does not reach the console as an unverified user", async () => {
+    const { app, sender } = createApp();
+    const email = "pending@authforge.demo";
+    await app.inject({ method: "POST", url: "/v1/auth/register", headers: origin, payload: { email, password: "a-demo-password-123" } });
+    expect(sender.verificationTokens).toHaveLength(1);
+    const login = await app.inject({ method: "POST", url: "/v1/auth/login", headers: origin, payload: { email, password: "a-demo-password-123" } });
+    expect(login.statusCode).toBe(401);
+    expect(login.json().error.code).toBe("invalid_user_credentials");
+    expect(login.headers["set-cookie"]).toBeUndefined();
+    expect((await app.inject({ method: "GET", url: "/v1/console/state", headers: origin })).statusCode).toBe(401);
+  });
+
+  it("fails closed with 503 dependency_unavailable when the rate limiter is unavailable", async () => {
     const failingRateLimiter = {
-      assertAllowed: async () => {
-        throw new Error("Redis cluster disconnected");
-      },
+      assertAllowed: async () => { throw new Error("Redis cluster disconnected"); },
       recordFailure: async () => {},
       reset: async () => {},
-      ready: async () => {
-        throw new Error("Redis cluster disconnected");
-      }
+      ready: async () => { throw new Error("Redis cluster disconnected"); }
     };
     const app = buildApi(config, new MemoryShowcaseStore(), failingRateLimiter);
     apps.push(app);
-
     const readyResponse = await app.inject({ method: "GET", url: "/health/ready" });
     expect(readyResponse.statusCode).toBe(503);
     expect(readyResponse.json().error.code).toBe("dependency_unavailable");
-
-    const loginResponse = await app.inject({
-      method: "POST",
-      url: "/v1/console/session",
-      payload: { access_code: config.consoleAccessCode }
-    });
-    expect(loginResponse.statusCode).toBe(503);
-    expect(loginResponse.json().error.code).toBe("dependency_unavailable");
   });
 
-  it("revokes a console session and clears its cookie", async () => {
-    const app = createApp();
-    const login = await app.inject({
-      method: "POST",
-      url: "/v1/console/session",
-      payload: { access_code: config.consoleAccessCode }
-    });
-    const cookie = login.headers["set-cookie"] as string;
-    const csrf = login.json().csrf_token as string;
+  it("lists demo users in console state with only public fields and no password material", async () => {
+    const { app, signIn } = createApp();
+    const { cookie, email } = await signIn();
+    await app.inject({ method: "POST", url: "/v1/auth/register", headers: origin, payload: { email: "pending-user@authforge.demo", password: "a-demo-password-123" } });
+    const response = await app.inject({ method: "GET", url: "/v1/console/state", headers: { ...origin, cookie } });
+    expect(response.statusCode).toBe(200);
+    const users = response.json().users as Array<Record<string, unknown>>;
+    expect(users.map(user => user.email)).toEqual(["pending-user@authforge.demo", email]);
+    for (const user of users) expect(Object.keys(user).sort()).toEqual(["created_at", "email", "email_verified", "id"]);
+    expect(users.map(user => user.email_verified)).toEqual([false, true]);
+    expect(response.body).not.toMatch(/argon2|password/i);
+  });
 
-    const logout = await app.inject({
-      method: "DELETE",
-      url: "/v1/console/session",
-      headers: { ...origin, cookie, "x-csrf-token": csrf }
-    });
+  it("returns 401 from the console after the browser session is signed out", async () => {
+    const { app, signIn } = createApp();
+    const { cookie, csrf } = await signIn();
+    expect((await app.inject({ method: "GET", url: "/v1/console/state", headers: { ...origin, cookie } })).statusCode).toBe(200);
+    const logout = await app.inject({ method: "DELETE", url: "/v1/auth/session", headers: { ...origin, cookie, "x-csrf-token": csrf } });
     expect(logout.statusCode).toBe(204);
     expect(logout.headers["set-cookie"]).toContain("Max-Age=0");
-
-    const accessAfter = await app.inject({
-      method: "GET",
-      url: "/v1/console/state",
-      headers: { ...origin, cookie }
-    });
-    expect(accessAfter.statusCode).toBe(401);
-    expect(accessAfter.json().error.code).toBe("invalid_console_session");
+    const after = await app.inject({ method: "GET", url: "/v1/console/state", headers: { ...origin, cookie } });
+    expect(after.statusCode).toBe(401);
+    expect(after.json().error.code).toBe("invalid_user_credentials");
   });
 
   it("enforces configured Origin on GET console routes when called with browser Origin header", async () => {
-    const app = createApp();
-    const login = await app.inject({
-      method: "POST",
-      url: "/v1/console/session",
-      payload: { access_code: config.consoleAccessCode }
-    });
-    const cookie = login.headers["set-cookie"] as string;
+    const { app, signIn } = createApp();
+    const { cookie } = await signIn();
 
     const blocked = await app.inject({
       method: "GET",
@@ -225,14 +224,8 @@ describe("showcase API", () => {
   });
 
   it("allows revoking an application session directly through the console", async () => {
-    const app = createApp();
-    const login = await app.inject({
-      method: "POST",
-      url: "/v1/console/session",
-      payload: { access_code: config.consoleAccessCode }
-    });
-    const cookie = login.headers["set-cookie"] as string;
-    const csrf = login.json().csrf_token as string;
+    const { app, signIn } = createApp();
+    const { cookie, csrf } = await signIn();
 
     const keyResponse = await app.inject({
       method: "POST",
@@ -278,14 +271,8 @@ describe("showcase API", () => {
   });
 
   it("lists API keys metadata and rejects invalid API key creations", async () => {
-    const app = createApp();
-    const login = await app.inject({
-      method: "POST",
-      url: "/v1/console/session",
-      payload: { access_code: config.consoleAccessCode }
-    });
-    const cookie = login.headers["set-cookie"] as string;
-    const csrf = login.json().csrf_token as string;
+    const { app, signIn } = createApp();
+    const { cookie, csrf } = await signIn();
 
     // Reject empty name
     const invalidCreate = await app.inject({

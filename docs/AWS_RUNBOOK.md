@@ -22,7 +22,7 @@ Run `destroy-plan` immediately after the demonstration and review the resources 
 1. Confirm the college credit balance, selected account/profile, SES sender and test-inbox verification, ingress CIDR, and teardown deadline.
 2. Run `npm run classroom:aws -- preflight`; it creates no resources.
 3. Run `npm run classroom:aws -- plan` and review the exact EC2, public IPv4, RDS, S3, SES, and CloudWatch plan. Only after approval, set `AUTHFORGE_ALLOW_BILLABLE_AWS=yes` and `AUTHFORGE_CONFIRM=DEPLOY`, then run `npm run classroom:aws -- deploy`.
-4. Run `npm run classroom:aws -- status` and `npm run classroom:aws -- smoke`. The smoke checks API acceptance for registration; then open the verification message in the configured test inbox and complete verification/reset in the browser. The CLI cannot read that inbox. Show all five service resources without displaying secrets or state.
+4. Run `npm run classroom:aws -- status` and `npm run classroom:aws -- smoke`. The smoke checks API acceptance for registration. Console steps need a verified demo account: register one, open its verification message in the configured test inbox, then pass `AUTHFORGE_SMOKE_EMAIL` and `AUTHFORGE_SMOKE_PASSWORD` to `smoke`. Without them the console steps are skipped and reported. The CLI cannot read that inbox. Show all five service resources without displaying secrets or state.
 5. Use synthetic account labels and data. Lifecycle-event email stays on the SES mailbox simulator; account links go only to the one configured inbox. Never widen ingress beyond the configured CIDR on port 8080.
 
 ## Future classroom teardown

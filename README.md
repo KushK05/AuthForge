@@ -37,9 +37,9 @@ The local backend implements hosted registration, one-time email verification, p
 
 ## Demonstration flow
 
-1. Open the developer console and enter the deployment-scoped console access code.
-2. Create an API key and copy its secret from the one-time response.
-3. Register an approved `@authforge.demo` label, open the verification link delivered to the configured evaluation inbox, and sign in. The inbox proves access to that test inbox, not ownership of the synthetic alias.
+1. Register an approved `@authforge.demo` label, open the verification link delivered to the configured evaluation inbox, and sign in. The inbox proves access to that test inbox, not ownership of the synthetic alias.
+2. Open the shared developer console, which any signed-in verified demo user can reach, and create an API key. Copy its secret from the one-time response.
+3. Confirm the console lists the same keys, sessions, and events for every signed-in user.
 4. Use the API key to create a session for that demo user.
 5. Validate the returned session token.
 6. Revoke the session or API key and show that subsequent validation fails.
@@ -70,11 +70,11 @@ npm ci
 docker compose up --build -d --wait
 ```
 
-Open http://127.0.0.1:8080 for demo signup/sign-in and http://127.0.0.1:8080/console for developer access. Without a `.env` file, the local console access code is `local-showcase-console-access-code`.
+Open http://127.0.0.1:8080 for demo signup/sign-in and http://127.0.0.1:8080/console for the developer console. Sign in with a verified demo user to open it; there is no separate console access code. Locally, the verification link is captured by LocalStack SES.
 
 Use only synthetic addresses such as `learner@authforge.demo` and a demo password of at least 12 characters. Create an API key in the console; keep it on the demo application backend. The console previews do not configure MFA, authorization-code redirects, or webhooks.
 
-Compose creates emulator resources, runs forward-only migrations, then starts the API and worker. Optional API `.env` overrides must keep `CONSOLE_ORIGIN` exactly equal to the address used in the browser. The worker and migration runner use separate optional `.env.worker` and `.env.migrate` files and need no console access code or digest key. Never reuse local example credentials for AWS.
+Compose creates emulator resources, runs forward-only migrations, then starts the API and worker. Optional API `.env` overrides must keep `CONSOLE_ORIGIN` exactly equal to the address used in the browser. The worker and migration runner use separate optional `.env.worker` and `.env.migrate` files and need no digest key. Never reuse local example credentials for AWS.
 
 Run the complete local API and event check (prints no credentials):
 

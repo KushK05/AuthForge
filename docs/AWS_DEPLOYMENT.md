@@ -42,7 +42,7 @@ support and secure the environment.
 | SES | Sandbox or mailbox-simulator call with fixed synthetic content. |
 | S3 | Redacted synthetic event artifacts with short lifecycle policy. |
 | KMS | Encryption for supported data services, secrets, queues, buckets, and logs. |
-| Secrets Manager | Console access code, credential digest key, and database credentials. |
+| Secrets Manager | Credential digest key and database credentials. |
 | CloudWatch | Logs, metrics, dashboard, and alarms for the demonstration. |
 | IAM | Separate least-privilege API, worker, deployment, and CI roles. |
 | Terraform | Creates, documents, and destroys the complete stack. |
@@ -124,7 +124,7 @@ For the active low-cost teacher showcase, use only `infra/classroom` and the `cl
 
 | Workload | Injected secrets | Other required runtime settings |
 | --- | --- | --- |
-| API | Database URL, console access code, credential digest key | Redis TLS URL, trusted HTTPS Origin, secure cookies |
+| API | Database URL, credential digest key | Redis TLS URL, trusted HTTPS Origin, secure cookies |
 | Worker | Database URL only | Queue URL, S3 bucket/KMS key, SES sender and simulator recipient |
 | Migration task | Database URL only | Runtime environment and log level |
 

@@ -20,10 +20,9 @@ import { ConsoleService } from "../modules/developer-console/console-service.js"
 import { type IssuedSession, SessionService } from "../modules/sessions/session-service.js";
 import { UserService } from "../modules/users/user-service.js";
 import { SesAuthEmailSender, type AuthEmailSender } from "../modules/users/auth-email-service.js";
-import { authClient, authPage } from "./auth-page.js";
-import { dashboardClient, dashboardPage } from "./dashboard-page.js";
+import { registerPageRoutes } from "./ui/routes.js";
 import { type ConsoleRateLimiter, MemoryConsoleRateLimiter } from "../platform/redis.js";
-import type { ApiKeyRecord, ApplicationSessionRecord, ConsoleSessionRecord, ShowcaseStore } from "../platform/store.js";
+import type { ApiKeyRecord, ApplicationSessionRecord, ShowcaseStore } from "../platform/store.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -31,7 +30,6 @@ declare module "fastify" {
   }
 }
 
-const cookieName = "authforge_console";
 const userCookieName = "authforge_user";
 
 const parseCookie = (header: string | undefined, name: string): string | undefined => {
@@ -72,7 +70,7 @@ export const buildApi = (
   // AWS has exactly two trusted hops: ALB and CloudFront. Never trust the
   // viewer-supplied prefix of X-Forwarded-For.
   const api = Fastify({ logger: false, bodyLimit: config.maxRequestBodyBytes ?? 16384, trustProxy: config.trustProxy ? (_address: string, hop: number) => hop < 2 : false });
-  const consoleService = new ConsoleService(config, store, rateLimiter);
+  const consoleService = new ConsoleService(store);
   const apiKeyService = new ApiKeyService(config, store);
   const sessionService = new SessionService(config, store);
   const userService = new UserService(config, store, authEmailSender);
@@ -121,11 +119,15 @@ export const buildApi = (
     });
   });
 
-  const requireConsole = async (request: FastifyRequest, mutation: boolean): Promise<ConsoleSessionRecord> => {
-    const token = parseCookie(request.headers.cookie, cookieName);
+  const requireConsole = async (request: FastifyRequest, mutation: boolean) => {
     const origin = getOrigin(request);
-    const csrf = typeof request.headers["x-csrf-token"] === "string" ? request.headers["x-csrf-token"] : undefined;
-    return consoleService.verifySession(token, origin, mutation, csrf);
+    if (mutation ? origin !== config.consoleOrigin : origin !== undefined && origin !== config.consoleOrigin) throw invalidCsrf();
+    const current = await userService.authenticate(parseCookie(request.headers.cookie, userCookieName));
+    if (mutation) {
+      const csrf = typeof request.headers["x-csrf-token"] === "string" ? request.headers["x-csrf-token"] : undefined;
+      userService.verifyCsrf(current.session, csrf);
+    }
+    return current;
   };
 
   const requireApiKey = async (request: FastifyRequest): Promise<ApiKeyRecord> => {
@@ -133,18 +135,7 @@ export const buildApi = (
   };
 
   api.get("/health/live", async () => ({ status: "ok" }));
-  api.get("/", async (_request, reply) => {
-    reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
-    reply.header("Cache-Control", "no-store");
-    return reply.type("text/html; charset=utf-8").send(authPage);
-  });
-  api.get("/console", async (_request, reply) => { reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"); reply.header("Cache-Control", "no-store"); return reply.type("text/html; charset=utf-8").send(dashboardPage); });
-  api.get("/dashboard.js", async (_request, reply) => {
-    reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'");
-    reply.header("Cache-Control", "no-store");
-    return reply.type("application/javascript; charset=utf-8").send(dashboardClient);
-  });
-  api.get("/auth.js", async (_request, reply) => { reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"); reply.header("Cache-Control", "no-store"); return reply.type("application/javascript; charset=utf-8").send(`${authClient};document.head.insertAdjacentHTML('beforeend','<style>.layout>section:first-child:before{display:none}@media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr);gap:46px}}@media(max-width:520px){.layout{gap:34px}.layout>section:first-child{padding:32px 0 34px}.layout>section:first-child:before{display:none}h1{font-size:clamp(43px,13vw,54px)}.lead{margin:20px 0 28px}.proof{gap:15px}.card{padding:24px;box-shadow:10px 10px 0 #182c36}}</style>');`); });
+  registerPageRoutes(api);
   api.get("/health/ready", async (_request, reply) => {
     try {
       await store.ready();
@@ -156,23 +147,28 @@ export const buildApi = (
     }
   });
 
-  api.post("/v1/console/session", async (request, reply) => {
-    const body = z.object({ access_code: z.string().min(1).max(256) }).strict().safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid console access request");
-    const { token, csrfToken } = await consoleService.login(body.data.access_code, request.ip);
-    const secure = config.secureCookies ? "; Secure" : "";
-    reply.header("Set-Cookie", `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=900${secure}`);
-    reply.header("Cache-Control", "no-store");
-    return reply.send({ csrf_token: csrfToken });
-  });
-
   const userCookie = (token: string, maxAge: number): string => `${userCookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.secureCookies ? "; Secure" : ""}`;
-  const throttleUserAuth = async (request: FastifyRequest): Promise<string> => {
+  // Email-sending routes count every request so the test inbox cannot be flooded.
+  // Credential routes (sign-in, verify, reset confirm) count only failed attempts,
+  // so successful sign-ins from a shared classroom network never lock it out.
+  const authBucket = (request: FastifyRequest, kind: "mail" | "credential"): string => {
     if (getOrigin(request) !== config.consoleOrigin) throw invalidCsrf();
-    const bucket = `auth:${digest(request.ip, config).toString("hex")}`;
+    return `auth-${kind}:${digest(request.ip, config).toString("hex")}`;
+  };
+  const throttleUserAuth = async (request: FastifyRequest): Promise<void> => {
+    const bucket = authBucket(request, "mail");
     await rateLimiter.assertAllowed(bucket);
     await rateLimiter.recordFailure(bucket);
-    return bucket;
+  };
+  const credentialAttempt = async <T>(request: FastifyRequest, attempt: () => Promise<T>): Promise<T> => {
+    const bucket = authBucket(request, "credential");
+    await rateLimiter.assertAllowed(bucket);
+    try {
+      return await attempt();
+    } catch (error) {
+      await rateLimiter.recordFailure(bucket);
+      throw error;
+    }
   };
   api.post("/v1/auth/register", async (request, reply) => {
     await throttleUserAuth(request);
@@ -191,19 +187,21 @@ export const buildApi = (
     return reply.status(202).send({message: "If the account needs verification, a message has been sent to the configured demo inbox."});
   });
   api.post("/v1/auth/verify-email", async (request, reply) => {
-    await throttleUserAuth(request);
-    const body = z.object({token: z.string().min(1).max(128)}).strict().safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid email verification request");
-    const issued = await userService.verifyEmail(body.data.token);
+    const issued = await credentialAttempt(request, async () => {
+      const body = z.object({token: z.string().min(1).max(128)}).strict().safeParse(request.body);
+      if (!body.success) throw invalidRequest("Invalid email verification request");
+      return userService.verifyEmail(body.data.token);
+    });
     reply.header("Set-Cookie", userCookie(issued.token, 3600));
     reply.header("Cache-Control", "no-store");
     return reply.send({user: {id: issued.user.id, email: issued.user.email}, csrf_token: issued.csrfToken});
   });
   api.post("/v1/auth/login", async (request, reply) => {
-    await throttleUserAuth(request);
-    const body = z.object({ email: z.string().max(254), password: z.string().max(256) }).strict().safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid sign-in request");
-    const issued = await userService.login(body.data.email, body.data.password);
+    const issued = await credentialAttempt(request, async () => {
+      const body = z.object({ email: z.string().max(254), password: z.string().max(256) }).strict().safeParse(request.body);
+      if (!body.success) throw invalidRequest("Invalid sign-in request");
+      return userService.login(body.data.email, body.data.password);
+    });
     reply.header("Set-Cookie", userCookie(issued.token, 3600)); reply.header("Cache-Control", "no-store");
     return reply.send({ user: { id: issued.user.id, email: issued.user.email }, csrf_token: issued.csrfToken });
   });
@@ -216,10 +214,11 @@ export const buildApi = (
     return reply.status(202).send({message: "If the account is eligible, a password reset email has been sent to the configured demo inbox."});
   });
   api.post("/v1/auth/password-reset/confirm", async (request, reply) => {
-    await throttleUserAuth(request);
-    const body = z.object({token: z.string().min(1).max(128), password: z.string().min(12).max(256)}).strict().safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid password reset confirmation");
-    await userService.resetPassword(body.data.token, body.data.password);
+    await credentialAttempt(request, async () => {
+      const body = z.object({token: z.string().min(1).max(128), password: z.string().min(12).max(256)}).strict().safeParse(request.body);
+      if (!body.success) throw invalidRequest("Invalid password reset confirmation");
+      await userService.resetPassword(body.data.token, body.data.password);
+    });
     return reply.status(204).send();
   });
   api.get("/v1/auth/me", async (request) => {
@@ -234,14 +233,6 @@ export const buildApi = (
     if (getOrigin(request) !== config.consoleOrigin) throw invalidCsrf();
     userService.verifyCsrf(current.session, csrf); await store.revokeUserSession(current.session.id, new Date());
     reply.header("Set-Cookie", userCookie("", 0)); return reply.status(204).send();
-  });
-
-  api.delete("/v1/console/session", async (request, reply) => {
-    const session = await requireConsole(request, true);
-    await consoleService.revokeSession(session.id);
-    const secure = config.secureCookies ? "; Secure" : "";
-    reply.header("Set-Cookie", `${cookieName}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
-    return reply.status(204).send();
   });
 
   api.get("/v1/console/state", async (request) => {

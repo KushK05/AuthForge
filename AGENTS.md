@@ -7,7 +7,7 @@ When documents conflict, resolve them in this order: `docs/SECURITY.md`, `docs/A
 ## Non-negotiable product scope
 
 - Support a hosted demo-user registration and sign-in flow alongside the developer console, API-key lifecycle, and application-session lifecycle.
-- Use one deployment-scoped console operator. Do not build developer accounts or organization management.
+- The console is one shared operator console reached by signing in as a verified demo user (ADR-014). Every signed-in user sees the same keys, sessions, and events. Do not build per-user developer accounts, ownership, or organization management.
 - Sessions use synthetic subject identifiers or approved demo-user identifiers supplied by the demo client.
 - Approved `@authforge.demo` users may register and sign in with Argon2id password hashes held only for the demo lifetime. Email verification and password reset links go only to one operator-configured, SES-verified test inbox; this confirms access to the test inbox, not ownership of the synthetic `@authforge.demo` alias. Never accept arbitrary recipients. Do not add public onboarding, profiles, roles, permissions, social login, MFA, billing, or long-lived user identity.
 - Never use real personal, customer, or business data.
@@ -38,7 +38,7 @@ The five demonstrated services are EC2, RDS, SES, S3, and CloudWatch. Keep each 
 - Hash demo-user passwords with Argon2id and store only the hash.
 - Store only keyed digests of raw API keys and session tokens. Return each raw secret only when created.
 - Never log access codes, authorization headers, cookies, raw API keys, raw session tokens, or secret-bearing request bodies.
-- Authenticate console routes with one deployment-scoped access code stored in Secrets Manager.
+- Authenticate console routes with the verified demo-user browser session (`authforge_user` cookie). There is no console access code.
 - Require the CSRF token and trusted `Origin` checks defined in `docs/API_CONTRACTS.md` for console mutations.
 - Scope every application session to the API key that created it. Other API keys must not discover or revoke it.
 - Validate all untrusted HTTP input and use the stable error shape in `docs/API_CONTRACTS.md`.

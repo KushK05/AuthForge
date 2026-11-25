@@ -4,12 +4,11 @@
 
 The base path is `/v1`. JSON uses `application/json`, timestamps use ISO-8601 UTC, and IDs are opaque strings. Every response includes `X-Request-Id`. Responses containing raw secrets include `Cache-Control: no-store`.
 
-There are four credentials:
+There are three credentials:
 
-- Console access code: stored in Secrets Manager and exchanged for a short-lived, HTTP-only console cookie.
 - Secret API key: `Authorization: Bearer sk_<value>` for session-management endpoints.
 - Session token: an opaque value returned once when a session is created and passed to the validation endpoint body.
-- Demo-user browser session: an HTTP-only cookie created through hosted registration or sign-in.
+- Demo-user browser session: an HTTP-only cookie created through hosted verification or sign-in. It also authorizes the console (ADR-014).
 
 Registration accepts only approved `@authforge.demo` labels. Verification and reset links are sent to one configured, SES-verified evaluation inbox; the flow proves access to that inbox, not ownership of the synthetic alias. There is no public onboarding, social login, MFA, or user roles.
 
@@ -38,23 +37,21 @@ Use `400` for invalid input, `401` for invalid or expired credentials, `403` for
 
 ## Console protection
 
-Successful console login sets an `HttpOnly`, `Secure` outside local development, `SameSite=Strict` cookie and returns a random `csrf_token` in the JSON body. The server stores only its digest with the console session.
+Console routes use the demo-user browser session. Sign-in or email verification sets the `authforge_user` cookie (`HttpOnly`, `Secure` outside local development, `SameSite=Strict`) and returns a random `csrf_token`; `GET /v1/auth/me` returns it again after a reload. The server stores only its digest. There is one shared console: every signed-in verified user sees and manages the same API keys, sessions, and events.
 
 Every cookie-authenticated `POST`, `PUT`, `PATCH`, or `DELETE` request must:
 
 - Send the token in `X-CSRF-Token`.
 - Send an `Origin` header exactly matching a configured console origin.
 
-Missing or invalid proof returns `403 invalid_csrf`. `GET` routes still enforce the configured origin when called from a browser.
+Missing or invalid proof returns `403 invalid_csrf`. `GET` routes still enforce the configured origin when called from a browser. A console request without a valid browser session returns `401 invalid_user_credentials`.
 
 ## Console endpoints
 
 | Method and path | Auth | Contract |
 | --- | --- | --- |
-| `POST /v1/console/session` | none | `{access_code}`. Creates a short-lived console session and returns `{csrf_token}` with `Cache-Control: no-store`. Repeated failures use Redis-backed rate limits and the same `401 invalid_console_access` response. |
-| `DELETE /v1/console/session` | console cookie + CSRF | Revokes the current console session, clears the cookie, and returns `204`. |
-| `GET /v1/console/state` | console cookie | Returns API-key summaries, session summaries, and redacted showcase-event status needed by the dashboard. |
-| `DELETE /v1/console/sessions/{session_id}` | console cookie + CSRF | Revokes any application session selected in the console and returns `204`; repeated revocation also returns `204`. |
+| `GET /v1/console/state` | browser session cookie | Returns API-key summaries, session summaries, redacted showcase-event status, and a read-only `users` list (`[{id,email,email_verified,created_at}]`, newest first, at most 200, excluding disabled users) needed by the dashboard. User summaries never include password hashes, tokens, or digests. |
+| `DELETE /v1/console/sessions/{session_id}` | browser session cookie + CSRF | Revokes any application session selected in the console and returns `204`; repeated revocation also returns `204`. |
 
 ## Hosted demo-user endpoints
 
@@ -104,8 +101,8 @@ The `/v1` contract is stable for the showcase implementation and tests, but ther
 
 - “Approved” means a synthetic label matching `@authforge.demo`; the configured test inbox is the sole SES destination. Verification proves access to that inbox, not ownership of the alias. Verification links expire in one hour; reset links expire in 15 minutes; both are one-time keyed-digest records.
 - Hosted authentication mutations require the exact configured Origin. Cookie-authenticated session deletion also requires the CSRF token. Bad proof returns `403 invalid_csrf`.
-- Hosted authentication attempts are bounded per client using Redis. Registration and login share an attempt window, including successes; this also bounds password-hashing work. Console failures use a separate counter.
-- Browser sessions expire after one hour; console sessions after 15 minutes. Application sessions default to 15 minutes with a configured maximum of one hour.
+- Hosted authentication attempts are bounded per client using Redis. Registration and login share an attempt window, including successes; this also bounds password-hashing work.
+- Browser sessions, which also authorize the console, expire after one hour. Application sessions default to 15 minutes with a configured maximum of one hour.
 - User/session capacity checks and pending registration writes occur atomically. Duplicate registrations do not disclose account state. API-key capacity counts all keys retained for the demo; session capacity counts active sessions only.
 - Every response is `no-store`, including errors. Malformed JSON and oversized bodies return `400 invalid_request` in the stable error envelope. Unknown routes return `404 not_found` in that envelope.
 - Sessions use opaque tokens only. There is no JWT/JWKS or refresh endpoint.

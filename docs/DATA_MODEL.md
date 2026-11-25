@@ -10,7 +10,7 @@ Redis and S3 are part of the AWS evaluation but are not alternate authorities. R
 
 | Table | Key fields and constraints |
 | --- | --- |
-| `showcase_console_sessions` | `id`, `token_digest`, `csrf_digest`, `created_at`, `expires_at`, `revoked_at`; no developer identity fields. |
+| `showcase_console_sessions` | Unused since ADR-014. Retained only because migrations are forward-only and the environment is disposable; nothing reads or writes it. |
 | `showcase_api_keys` | `id`, `name`, `prefix`, `secret_digest`, `created_at`, `revoked_at`; unique digest and non-secret prefix. |
 | `showcase_users` | `id`, normalized approved demo email label, Argon2id password hash, `email_verified_at`, `created_at`, `disabled_at`; no profile fields. |
 | `showcase_user_email_actions` | `id`, `user_id`, purpose, keyed token digest, creation/expiry/consumption timestamps; one-time verification or reset action only. |
@@ -28,7 +28,7 @@ Do not add organizations, projects, environments, roles, permissions, refresh to
 - PostgreSQL stores only keyed digests of raw credential values.
 - Prefixes and names are display metadata and must not contain real secrets or personal data.
 - The raw API key and session token appear only in their creation response.
-- The console access code and digest key live in Secrets Manager and are encrypted with KMS.
+- The credential digest key lives in Secrets Manager and is encrypted with KMS.
 
 ## Invariants
 
@@ -44,7 +44,7 @@ Do not add organizations, projects, environments, roles, permissions, refresh to
 
 Redis may contain only:
 
-- Console access-code attempt counters with short TTLs.
+- Hosted authentication attempt counters with short TTLs.
 - Short-lived API-key and session-validation cache entries.
 - Revocation hints bounded by credential expiry.
 

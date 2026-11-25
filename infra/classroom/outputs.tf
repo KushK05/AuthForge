@@ -5,7 +5,3 @@ output "artifact_bucket" { value = aws_s3_bucket.showcase.bucket }
 output "log_group" { value = aws_cloudwatch_log_group.app.name }
 output "ses_sender" { value = var.ses_from_email }
 output "teardown_at" { value = var.teardown_at }
-output "console_access_code" {
-  value     = random_password.console.result
-  sensitive = true
-}

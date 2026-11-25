@@ -1,12 +1,3 @@
-export type ConsoleSessionRecord = Readonly<{
-  id: string;
-  tokenDigest: Buffer;
-  csrfDigest: Buffer;
-  createdAt: Date;
-  expiresAt: Date;
-  revokedAt?: Date;
-}>;
-
 export type ApiKeyRecord = Readonly<{
   id: string;
   name: string;
@@ -57,12 +48,11 @@ export type ApplicationSessionRecord = Readonly<{
 
 export type EventSummary = Readonly<{ id: string; event_type: string; created_at: string; published_at: string | null; processed_at: string | null }>;
 
+/** Read-only console projection of a demo user. Never carries password or token material. */
+export type UserSummary = Readonly<{ id: string; email: string; email_verified: boolean; created_at: string }>;
+
 export type ShowcaseStore = Readonly<{
   ready(): Promise<void>;
-  createConsoleSession(record: ConsoleSessionRecord, limit?: number): Promise<void>;
-  countConsoleSessions(): Promise<number>;
-  findConsoleSession(tokenDigest: Buffer, now: Date): Promise<ConsoleSessionRecord | undefined>;
-  revokeConsoleSession(id: string, now: Date): Promise<void>;
   findUserByEmail(email: string): Promise<DemoUserRecord | undefined>;
   findUserById(id: string): Promise<DemoUserRecord | undefined>;
   createUserSession(record: DemoUserSessionRecord, limit?: number): Promise<void>;
@@ -82,4 +72,5 @@ export type ShowcaseStore = Readonly<{
   listSessions(apiKeyId?: string): Promise<readonly ApplicationSessionRecord[]>;
   revokeSession(id: string, apiKeyId: string | undefined, now: Date): Promise<boolean>;
   listEventSummaries(): Promise<readonly EventSummary[]>;
+  listUserSummaries(limit: number): Promise<readonly UserSummary[]>;
 }>;
