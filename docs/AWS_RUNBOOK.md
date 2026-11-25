@@ -25,6 +25,10 @@ Run `destroy-plan` immediately after the demonstration and review the resources 
 4. Run `npm run classroom:aws -- status` and `npm run classroom:aws -- smoke`. The smoke checks API acceptance for registration. Console steps need a verified demo account: register one, open its verification message in the configured test inbox, then pass `AUTHFORGE_SMOKE_EMAIL` and `AUTHFORGE_SMOKE_PASSWORD` to `smoke`. Without them the console steps are skipped and reported. The CLI cannot read that inbox. Show all five service resources without displaying secrets or state.
 5. Use synthetic account labels and data. Lifecycle-event email stays on the SES mailbox simulator; account links go only to the one configured inbox. Never widen ingress beyond the configured CIDR on port 8080.
 
+## Pausing between demonstrations
+
+`npm run classroom:stop` stops the EC2 instance and the RDS instance (hourly charges end; storage and the Elastic IP still cost roughly US$0.15-0.25 per day). `npm run classroom:start` starts RDS, waits until it is available, starts EC2, and waits for `/health/ready`. `npm run classroom:power` shows both states and the URL. The URL, data, and accounts are kept. AWS restarts a stopped RDS instance automatically after 7 days, so destroy the stack instead of pausing for longer. These commands read IDs from local Terraform outputs and use `AWS_PROFILE` when set.
+
 ## Future classroom teardown
 
 1. Stop writes and run `npm run classroom:aws -- destroy-plan` with the same approved profile and account guard.

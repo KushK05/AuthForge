@@ -114,6 +114,60 @@ const destroy = (): void => {
   process.stdout.write("Classroom stack destroyed. Verify the five services are absent in the AWS console before ending the evaluation.\n");
 };
 
+// Stop and start only the hourly-billed compute (EC2 and RDS). Storage, the
+// Elastic IP, data, and the URL are kept. These commands read resource IDs from
+// Terraform outputs and need no deploy guard, because they create nothing.
+const sleep = (ms: number): void => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+const awsArgs = (): string[] => {
+  const region = readFileSync(`${root}/infra/classroom/${tfvars}`, "utf8").match(/^aws_region\s*=\s*"([^"]+)"/m)?.[1];
+  if (!region) throw new Error("aws_region is required in the classroom tfvars file");
+  return ["--region", region, "--no-cli-pager", ...(process.env.AWS_PROFILE ? ["--profile", process.env.AWS_PROFILE] : [])];
+};
+const ec2State = (id: string): string => capture("aws", ["ec2", "describe-instances", "--instance-ids", id, "--query", "Reservations[0].Instances[0].State.Name", "--output", "text", ...awsArgs()]);
+const dbState = (id: string): string => capture("aws", ["rds", "describe-db-instances", "--db-instance-identifier", id, "--query", "DBInstances[0].DBInstanceStatus", "--output", "text", ...awsArgs()]);
+const waitFor = (label: string, read: () => string, done: (state: string) => boolean, minutes: number): string => {
+  for (let elapsed = 0; elapsed < minutes * 60_000; elapsed += 15_000) {
+    const state = read();
+    if (done(state)) return state;
+    process.stdout.write(`  ${label}: ${state}, waiting...\n`);
+    sleep(15_000);
+  }
+  throw new Error(`${label} did not settle within ${minutes} minutes; check the AWS console`);
+};
+
+const power = (): void => {
+  const instance = output("instance_id"), database = output("database_identifier");
+  process.stdout.write(`URL: ${output("showcase_url")}\nEC2 ${instance}: ${ec2State(instance)}\nRDS ${database}: ${dbState(database)}\n`);
+};
+
+const stop = (): void => {
+  const instance = output("instance_id"), database = output("database_identifier");
+  const ec2 = ec2State(instance);
+  if (ec2 === "running" || ec2 === "pending") {
+    capture("aws", ["ec2", "stop-instances", "--instance-ids", instance, ...awsArgs()]);
+    process.stdout.write("Stopping EC2...\n");
+  }
+  waitFor("EC2", () => ec2State(instance), (state) => state === "stopped", 10);
+  const db = waitFor("RDS", () => dbState(database), (state) => ["available", "stopped", "stopping"].includes(state), 20);
+  if (db === "available") capture("aws", ["rds", "stop-db-instance", "--db-instance-identifier", database, ...awsArgs()]);
+  process.stdout.write("Stopped. EC2 is off and RDS is stopping (it finishes on its own in a few minutes).\nStorage and the public IP still cost about US$0.15-0.25 per day. AWS restarts a stopped RDS instance automatically after 7 days.\nRun `npm run classroom:start` to bring it back.\n");
+};
+
+const start = (): void => {
+  const instance = output("instance_id"), database = output("database_identifier"), url = output("showcase_url");
+  let db = waitFor("RDS", () => dbState(database), (state) => ["available", "stopped", "starting"].includes(state), 20);
+  if (db === "stopped") { capture("aws", ["rds", "start-db-instance", "--db-instance-identifier", database, ...awsArgs()]); process.stdout.write("Starting RDS (usually 5-10 minutes)...\n"); }
+  db = waitFor("RDS", () => dbState(database), (state) => state === "available", 20);
+  const ec2 = waitFor("EC2", () => ec2State(instance), (state) => ["running", "pending", "stopped"].includes(state), 10);
+  if (ec2 === "stopped") { capture("aws", ["ec2", "start-instances", "--instance-ids", instance, ...awsArgs()]); process.stdout.write("Starting EC2...\n"); }
+  waitFor("EC2", () => ec2State(instance), (state) => state === "running", 10);
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try { if (capture("curl", ["--fail", "--silent", `${url}/health/ready`])) { process.stdout.write(`Running: ${url}\n`); return; } } catch { /* app booting */ }
+    sleep(10_000);
+  }
+  throw new Error("EC2 and RDS are running but the app did not report ready within 5 minutes; check CloudWatch logs");
+};
+
 export const main = (action = process.argv[2]): void => {
   if (action === "preflight") { preflight(); process.stdout.write("Classroom preflight passed; no resources were created.\n"); }
   else if (action === "plan") planDeploy();
@@ -122,7 +176,10 @@ export const main = (action = process.argv[2]): void => {
   else if (action === "smoke") smoke();
   else if (action === "destroy-plan") planDestroy();
   else if (action === "destroy") destroy();
-  else throw new Error("Usage: npm run classroom:aws -- preflight|plan|deploy|status|smoke|destroy-plan|destroy");
+  else if (action === "stop") stop();
+  else if (action === "start") start();
+  else if (action === "power") power();
+  else throw new Error("Usage: npm run classroom:aws -- preflight|plan|deploy|status|smoke|destroy-plan|destroy|stop|start|power");
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
