@@ -48,6 +48,9 @@ export type ApplicationSessionRecord = Readonly<{
 
 export type EventSummary = Readonly<{ id: string; event_type: string; created_at: string; published_at: string | null; processed_at: string | null }>;
 
+/** Read-only console projection of a demo user. Never carries password or token material. */
+export type UserSummary = Readonly<{ id: string; email: string; email_verified: boolean; created_at: string }>;
+
 export type ShowcaseStore = Readonly<{
   ready(): Promise<void>;
   findUserByEmail(email: string): Promise<DemoUserRecord | undefined>;
@@ -69,4 +72,5 @@ export type ShowcaseStore = Readonly<{
   listSessions(apiKeyId?: string): Promise<readonly ApplicationSessionRecord[]>;
   revokeSession(id: string, apiKeyId: string | undefined, now: Date): Promise<boolean>;
   listEventSummaries(): Promise<readonly EventSummary[]>;
+  listUserSummaries(limit: number): Promise<readonly UserSummary[]>;
 }>;

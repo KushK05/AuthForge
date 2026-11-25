@@ -10,7 +10,8 @@ import type {
   DemoUserRecord,
   DemoUserEmailActionRecord,
   DemoUserSessionRecord,
-  ShowcaseStore
+  ShowcaseStore,
+  UserSummary
 } from "./store.js";
 
 type ApiKeyRow = Readonly<{
@@ -280,5 +281,12 @@ export class PostgresShowcaseStore implements ShowcaseStore {
       FROM showcase_outbox_events e LEFT JOIN showcase_worker_inbox i ON i.event_id = e.id
       ORDER BY e.created_at DESC LIMIT 50`;
     return rows.map(row => ({...row, created_at: row.created_at.toISOString(), published_at: row.published_at?.toISOString() ?? null, processed_at: row.processed_at?.toISOString() ?? null}));
+  }
+  public async listUserSummaries(limit: number): Promise<readonly UserSummary[]> {
+    const rows = await this.sql<{id: string; email: string; created_at: Date; email_verified: boolean}[]>`
+      SELECT id, email, created_at, (email_verified_at IS NOT NULL) AS email_verified
+      FROM showcase_users WHERE disabled_at IS NULL
+      ORDER BY created_at DESC LIMIT ${limit}`;
+    return rows.map(row => ({id: row.id, email: row.email, email_verified: row.email_verified, created_at: row.created_at.toISOString()}));
   }
 }

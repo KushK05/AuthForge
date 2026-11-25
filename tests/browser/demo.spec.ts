@@ -112,7 +112,7 @@ test("verify-email failure offers a resend form", async ({page}) => {
 test("sign-in goes to the console, which shows the email and signs out", async ({page}) => {
   const email = `${randomUUID()}@authforge.demo`;
   await mockAuth(page, email);
-  await page.route("**/v1/console/state", route => route.fulfill(json({api_keys: [], sessions: [], events: []})));
+  await page.route("**/v1/console/state", route => route.fulfill(json({api_keys: [], sessions: [], events: [], users: []})));
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill("a-demo-password-123");
@@ -167,38 +167,77 @@ test("forgot and reset password flow", async ({page}) => {
   await expect(page.getByRole("link", {name: "Request a new link"})).toHaveAttribute("href", "/forgot-password");
 });
 
-test("console key and session lifecycle with confirmation dialog and secret clearing", async ({page}) => {
-  const email = `${randomUUID()}@authforge.demo`;
-  await mockAuth(page, email, true);
-  const keys: Array<{id: string; name: string; prefix: string; created_at: string; revoked_at?: string}> = [];
-  const sessions = [{id: randomUUID(), api_key_id: "k", subject: "demo-browser-1", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 600_000).toISOString()} as {id: string; api_key_id: string; subject: string; created_at: string; expires_at: string; revoked_at?: string}];
-  const csrfSeen: string[] = [];
-  await page.route("**/v1/console/state", route => route.fulfill(json({api_keys: keys, sessions, events: []})));
+type KeyRow = {id: string; name: string; prefix: string; created_at: string; revoked_at?: string};
+type SessionRow = {id: string; api_key_id: string; subject: string; created_at: string; expires_at: string; revoked_at?: string};
+
+/** Mocks a signed-in console backed by mutable in-memory state. */
+const mockConsole = async (page: Page, initial: {keys?: KeyRow[]; sessions?: SessionRow[]; users?: unknown[]; events?: unknown[]} = {}) => {
+  await mockAuth(page, "operator@authforge.demo", true);
+  const data = {keys: initial.keys ?? [], sessions: initial.sessions ?? [], users: initial.users ?? [], events: initial.events ?? [], csrfSeen: [] as string[]};
+  await page.route("**/v1/console/state", route => route.fulfill(json({api_keys: data.keys, sessions: data.sessions, events: data.events, users: data.users})));
   await page.route("**/v1/api-keys", route => {
-    csrfSeen.push(route.request().headers()["x-csrf-token"] ?? "");
+    data.csrfSeen.push(route.request().headers()["x-csrf-token"] ?? "");
     const body = JSON.parse(route.request().postData() ?? "{}") as {name: string};
-    const key = {id: randomUUID(), name: body.name, prefix: "sk", created_at: new Date().toISOString()};
-    keys.push(key);
+    const key = {id: randomUUID(), name: body.name, prefix: "sk_AbCdEfGh", created_at: new Date().toISOString()};
+    data.keys.unshift(key);
     return route.fulfill(json({...key, secret: "sk_test_secret_value"}, 201));
   });
-  await page.route("**/v1/api-keys/*", route => { const id = route.request().url().split("/").pop(); const key = keys.find(item => item.id === id)!; key.revoked_at = new Date().toISOString(); return route.fulfill({status: 204}); });
-  await page.route("**/v1/console/sessions/*", route => { sessions[0]!.revoked_at = new Date().toISOString(); return route.fulfill({status: 204}); });
+  await page.route("**/v1/api-keys/*", route => { const id = route.request().url().split("/").pop(); data.keys.find(item => item.id === id)!.revoked_at = new Date().toISOString(); return route.fulfill({status: 204}); });
+  await page.route("**/v1/console/sessions/*", route => { const id = route.request().url().split("/").pop(); data.sessions.find(item => item.id === id)!.revoked_at = new Date().toISOString(); return route.fulfill({status: 204}); });
+  return data;
+};
 
+test("console sidebar switches sections, marks the active item, and keeps the hash on reload", async ({page}) => {
+  await mockConsole(page);
   await page.goto("/console");
-  await expect(page.locator("#user-email")).toHaveText(email);
+  const nav = page.getByRole("navigation", {name: "Console sections"});
+  await expect(nav.getByRole("link", {name: "Overview"})).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", {level: 1, name: "Overview"})).toBeVisible();
+  for (const [label, hash, heading] of [["Users", "users", "Users"], ["API keys", "api-keys", "API keys"], ["Sessions", "sessions", "Sessions"], ["Events", "events", "Events"], ["Authentication settings", "settings", "Authentication settings"]] as const) {
+    await nav.getByRole("link", {name: label, exact: true}).click();
+    await expect(page).toHaveURL(new RegExp(`#${hash}$`));
+    await expect(page.getByRole("heading", {level: 1, name: heading})).toBeVisible();
+    await expect(nav.getByRole("link", {name: label, exact: true})).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("#crumb")).toHaveText(heading);
+  }
+  await expect(page.getByText("Coming soon").first()).toBeVisible();
+  await expect(page.locator(".badge-ro").first()).toHaveText("Read-only");
+  await page.reload();
+  await expect(page.getByRole("heading", {level: 1, name: "Authentication settings"})).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/#events$/);
+  await expect(page.getByRole("heading", {level: 1, name: "Events"})).toBeVisible();
+  await expect(page.locator("#events-empty")).toContainText("No events yet");
+  await expect(nav.getByRole("link", {name: "Documentation"})).toHaveAttribute("href", "/docs");
+  await expect(nav.getByRole("link", {name: "API reference"})).toHaveAttribute("href", "/docs#api");
+});
+
+test("console creates an API key in a modal, shows the secret once, and revokes keys and sessions after confirmation", async ({page}) => {
+  const data = await mockConsole(page, {sessions: [{id: randomUUID(), api_key_id: "k", subject: "demo-browser-1", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 600_000).toISOString()}]});
+  await page.goto("/console#api-keys");
+  await expect(page.locator("#keys-empty")).toContainText("No API keys yet");
+  await page.getByRole("button", {name: "Create API key"}).first().click();
+  const dialog = page.getByRole("dialog", {name: "Create API key"});
+  await expect(dialog).toBeVisible();
+  await expect(page.locator("#key-name")).toBeFocused();
+  await dialog.getByRole("button", {name: "Create key"}).click();
+  await expect(page.locator("#key-error")).toHaveText("Enter a name for the key.");
   const name = `browser-${randomUUID()}`;
   await page.getByLabel("Key name", {exact: true}).fill(name);
-  await page.locator("#key-submit").click();
+  await dialog.getByRole("button", {name: "Create key"}).click();
+  await expect(dialog).toBeHidden();
   await expect(page.locator("#new-secret-value")).toHaveText("sk_test_secret_value");
-  expect(csrfSeen).toEqual(["test-csrf"]);
+  expect(data.csrfSeen).toEqual(["test-csrf"]);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.locator("#copy-secret").click();
-  await expect(page.locator("#toast")).toHaveText("API key copied to the clipboard.");
+  await expect(page.locator("#toasts")).toContainText("API key copied to the clipboard.");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("sk_test_secret_value");
-  await page.locator("#dismiss-secret").click();
+  await page.getByRole("button", {name: "I've saved it"}).click();
+  await expect(page.locator("#new-secret")).toBeHidden();
   await expect(page.locator("#new-secret-value")).toHaveText("");
 
-  const keyRow = page.locator("#key-list .item").filter({hasText: name});
+  const keyRow = page.locator("#key-table tbody tr").filter({hasText: name});
+  await expect(keyRow).toContainText("sk_AbCdEfGh");
   await keyRow.getByRole("button", {name: /Revoke/}).click();
   await expect(page.locator("#confirm-cancel")).toBeFocused();
   await page.keyboard.press("Escape");
@@ -207,14 +246,58 @@ test("console key and session lifecycle with confirmation dialog and secret clea
   await keyRow.getByRole("button", {name: /Revoke/}).click();
   await page.locator("#confirm-ok").click();
   await expect(keyRow).toContainText("Revoked");
+  await expect(page.locator("#toasts")).toContainText("API key revoked.");
 
-  await page.locator('[data-view="sessions"]').click();
-  const sessionRow = page.locator("#session-list .item").filter({hasText: "demo-browser-1"});
+  await page.getByRole("link", {name: "Sessions", exact: true}).click();
+  const sessionRow = page.locator("#session-table tbody tr").filter({hasText: "demo-browser-1"});
   await sessionRow.getByRole("button", {name: /Revoke/}).click();
   await page.locator("#confirm-ok").click();
   await expect(sessionRow).toContainText("Revoked");
-  await page.locator('[data-view="events"]').click();
-  await expect(page.locator("#event-list")).toContainText("No events yet");
+  await page.locator('[data-filter="active"]').click();
+  await expect(page.locator("#sessions-empty")).toContainText("No sessions match this filter");
+  await page.locator('[data-filter="ended"]').click();
+  await expect(sessionRow).toBeVisible();
+});
+
+test("console users table renders demo users from state and filters by email", async ({page}) => {
+  await mockConsole(page, {users: [
+    {id: "u1", email: "ada@authforge.demo", email_verified: true, created_at: new Date().toISOString()},
+    {id: "u2", email: "grace@authforge.demo", email_verified: false, created_at: new Date(Date.now() - 86_400_000).toISOString()}
+  ]});
+  await page.goto("/console#users");
+  const rows = page.locator("#user-table tbody tr");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("ada@authforge.demo");
+  await expect(rows.nth(0)).toContainText("Verified");
+  await expect(rows.nth(1)).toContainText("Pending");
+  await expect(page.locator("#m-users")).toHaveText("2");
+  await page.getByLabel("Search users by email").fill("grace");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("grace@authforge.demo");
+  await page.getByLabel("Search users by email").fill("nobody");
+  await expect(page.locator("#users-empty")).toContainText("No matching users");
+});
+
+test("console sidebar becomes a drawer on mobile that opens and closes", async ({page}) => {
+  await page.setViewportSize({width: 375, height: 812});
+  await mockConsole(page);
+  await page.goto("/console");
+  const sidebar = page.locator("#sidebar");
+  await expect(page.getByRole("button", {name: "Open navigation"})).toBeVisible();
+  await expect(sidebar).not.toBeInViewport();
+  await page.getByRole("button", {name: "Open navigation"}).click();
+  await expect(sidebar).toBeInViewport({ratio: 0.9});
+  await expect(page.getByRole("button", {name: "Open navigation"})).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(sidebar).not.toBeInViewport();
+  await page.getByRole("button", {name: "Open navigation"}).click();
+  await page.getByRole("link", {name: "API keys", exact: true}).click();
+  await expect(page).toHaveURL(/#api-keys$/);
+  await expect(sidebar).not.toBeInViewport();
+  for (const hash of ["overview", "users", "api-keys", "sessions", "events", "settings"]) {
+    await page.goto(`/console#${hash}`);
+    expect(await noHorizontalScroll(page)).toBe(true);
+  }
 });
 
 test("console returns to login when an API call reports the session ended", async ({page}) => {

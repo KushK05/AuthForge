@@ -9,6 +9,7 @@ describe("ConsoleService", () => {
     expect(state.api_keys).toEqual([]);
     expect(state.sessions).toEqual([]);
     expect(state.events).toEqual([]);
+    expect(state.users).toEqual([]);
   });
 
   it("summarises API keys without secret material", async () => {

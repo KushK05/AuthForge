@@ -2,8 +2,12 @@ import type {
   EventSummary,
   ApiKeyRecord,
   ApplicationSessionRecord,
-  ShowcaseStore
+  ShowcaseStore,
+  UserSummary
 } from "../../platform/store.js";
+
+/** Upper bound on demo users listed in the console (the default MAX_DEMO_USERS cap is 100). */
+export const CONSOLE_USER_LIMIT = 200;
 
 export type ConsoleState = Readonly<{
   api_keys: readonly Readonly<{
@@ -22,6 +26,7 @@ export type ConsoleState = Readonly<{
     expires_at: string;
     revoked_at?: string;
   }>[];
+  users: readonly UserSummary[];
 }>;
 
 const iso = (value: Date): string => value.toISOString();
@@ -47,13 +52,15 @@ export class ConsoleService {
   public constructor(private readonly store: ShowcaseStore) {}
 
   public async getState(): Promise<ConsoleState> {
-    const [keys, sessions, events] = await Promise.all([
+    const [keys, sessions, events, users] = await Promise.all([
       this.store.listApiKeys(),
       this.store.listSessions(),
-      this.store.listEventSummaries()
+      this.store.listEventSummaries(),
+      this.store.listUserSummaries(CONSOLE_USER_LIMIT)
     ]);
     return {
       events,
+      users,
       api_keys: keys.map(publicApiKeySummary),
       sessions: sessions.map(publicSessionSummary)
     };

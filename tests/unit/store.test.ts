@@ -80,3 +80,20 @@ describe("ShowcaseStore (API keys)", () => {
     });
   });
 });
+
+describe("ShowcaseStore (user summaries)", () => {
+  const action = (userId: string) => ({ id: randomUUID(), userId, purpose: "verify_email" as const, tokenDigest: Buffer.from(randomUUID()), createdAt: new Date(), expiresAt: new Date(Date.now() + 60_000) });
+
+  it("lists users newest first with only public fields, respecting the limit", async () => {
+    const store = new MemoryShowcaseStore();
+    const ids = [randomUUID(), randomUUID(), randomUUID()];
+    for (const [index, id] of ids.entries()) {
+      await store.createPendingUser({ id, email: `user-${index}@authforge.demo`, passwordHash: "$argon2id$hash", createdAt: new Date(Date.UTC(2026, 0, index + 1)) }, action(id), 10);
+    }
+    const all = await store.listUserSummaries(10);
+    expect(all.map(user => user.email)).toEqual(["user-2@authforge.demo", "user-1@authforge.demo", "user-0@authforge.demo"]);
+    expect(all[0]).toEqual({ id: ids[2], email: "user-2@authforge.demo", email_verified: false, created_at: "2026-01-03T00:00:00.000Z" });
+    expect(JSON.stringify(all)).not.toContain("argon2");
+    expect(await store.listUserSummaries(2)).toHaveLength(2);
+  });
+});

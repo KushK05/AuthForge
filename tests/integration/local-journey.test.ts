@@ -82,6 +82,16 @@ describe.skipIf(!enabled)("real PostgreSQL and Redis journey", () => {
     expect(await store.findUserByEmail(user.email)).toBeUndefined();
   });
 
+  it("lists user summaries from PostgreSQL without password material", async () => {
+    const summaries = await store.listUserSummaries(200);
+    expect(summaries.length).toBeGreaterThan(0);
+    for (const summary of summaries) expect(Object.keys(summary).sort()).toEqual(["created_at", "email", "email_verified", "id"]);
+    expect(summaries.some(summary => summary.email_verified)).toBe(true);
+    const times = summaries.map(summary => Date.parse(summary.created_at));
+    expect([...times].sort((a, b) => b - a)).toEqual(times);
+    expect(await store.listUserSummaries(1)).toHaveLength(1);
+  });
+
   it("uses real Redis counters with TTL and fails closed on connection loss", async () => {
     const bucket = randomUUID();
     await limiter.recordFailure(bucket); await limiter.recordFailure(bucket);

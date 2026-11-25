@@ -6,7 +6,8 @@ import type {
   DemoUserRecord,
   DemoUserEmailActionRecord,
   DemoUserSessionRecord,
-  ShowcaseStore
+  ShowcaseStore,
+  UserSummary
 } from "./store.js";
 
 const active = (revokedAt: Date | undefined, expiresAt: Date, now: Date): boolean =>
@@ -139,4 +140,11 @@ export class MemoryShowcaseStore implements ShowcaseStore {
   }
 
   public async listEventSummaries(): Promise<readonly EventSummary[]> { return []; }
+  public async listUserSummaries(limit: number): Promise<readonly UserSummary[]> {
+    return [...this.users.values()]
+      .filter(user => user.disabledAt === undefined)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(0, limit)
+      .map(user => ({ id: user.id, email: user.email, email_verified: user.emailVerifiedAt !== undefined, created_at: user.createdAt.toISOString() }));
+  }
 }

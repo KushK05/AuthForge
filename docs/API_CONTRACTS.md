@@ -50,7 +50,7 @@ Missing or invalid proof returns `403 invalid_csrf`. `GET` routes still enforce 
 
 | Method and path | Auth | Contract |
 | --- | --- | --- |
-| `GET /v1/console/state` | browser session cookie | Returns API-key summaries, session summaries, and redacted showcase-event status needed by the dashboard. |
+| `GET /v1/console/state` | browser session cookie | Returns API-key summaries, session summaries, redacted showcase-event status, and a read-only `users` list (`[{id,email,email_verified,created_at}]`, newest first, at most 200, excluding disabled users) needed by the dashboard. User summaries never include password hashes, tokens, or digests. |
 | `DELETE /v1/console/sessions/{session_id}` | browser session cookie + CSRF | Revokes any application session selected in the console and returns `204`; repeated revocation also returns `204`. |
 
 ## Hosted demo-user endpoints

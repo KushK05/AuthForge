@@ -176,6 +176,19 @@ describe("showcase API", () => {
     expect(readyResponse.json().error.code).toBe("dependency_unavailable");
   });
 
+  it("lists demo users in console state with only public fields and no password material", async () => {
+    const { app, signIn } = createApp();
+    const { cookie, email } = await signIn();
+    await app.inject({ method: "POST", url: "/v1/auth/register", headers: origin, payload: { email: "pending-user@authforge.demo", password: "a-demo-password-123" } });
+    const response = await app.inject({ method: "GET", url: "/v1/console/state", headers: { ...origin, cookie } });
+    expect(response.statusCode).toBe(200);
+    const users = response.json().users as Array<Record<string, unknown>>;
+    expect(users.map(user => user.email)).toEqual(["pending-user@authforge.demo", email]);
+    for (const user of users) expect(Object.keys(user).sort()).toEqual(["created_at", "email", "email_verified", "id"]);
+    expect(users.map(user => user.email_verified)).toEqual([false, true]);
+    expect(response.body).not.toMatch(/argon2|password/i);
+  });
+
   it("returns 401 from the console after the browser session is signed out", async () => {
     const { app, signIn } = createApp();
     const { cookie, csrf } = await signIn();
