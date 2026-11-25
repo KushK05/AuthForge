@@ -15,7 +15,7 @@ The active low-cost deployment demonstrates five AWS services:
 
 - Amazon EC2 runs the API, worker, and disposable Redis container.
 - Amazon RDS for PostgreSQL stores temporary synthetic state.
-- Amazon SES uses only the mailbox simulator.
+- Amazon SES exercises synthetic lifecycle events with the mailbox simulator and sends account action links only to one configured, SES-verified evaluation inbox.
 - Amazon S3 stores redacted synthetic artifacts.
 - Amazon CloudWatch receives API and worker logs.
 
@@ -25,21 +25,21 @@ RDS, Redis, S3, queues, logs, and other resources may contain synthetic showcase
 
 ## Current repository status
 
-The local backend implements hosted demo registration/sign-in, console access, API keys, opaque application sessions, and the SQS/worker/S3/SES simulator journey. Local contract, integration, and browser checks are described in `docs/TESTING.md`. AWS deployment configuration, a guarded migration helper, and an offline Terraform test suite are prepared; no AWS environment is deployed as part of local setup.
+The local backend implements hosted registration, one-time email verification, password reset, console access, API keys, opaque application sessions, and the SQS/worker/S3/SES emulator journey. Local account-action mail is captured by LocalStack. Local contract, integration, and browser checks are described in `docs/TESTING.md`. AWS deployment configuration, a guarded migration helper, and an offline Terraform test suite are prepared; no AWS environment is deployed as part of local setup.
 
 ## Explicitly excluded
 
 - Developer organizations, teams, tenant projects, environments, and billing.
-- Public onboarding, real-recipient email, password reset, profiles, roles, permissions, and billing.
+- Public onboarding, arbitrary email recipients, profiles, roles, permissions, and billing.
 - Social login, MFA, refresh-token families, public JWT/JWKS infrastructure, and user directories.
-- Real recipient email, real personal data, production traffic, long-term retention, backups, and disaster recovery.
+- Arbitrary or personal recipient email, real personal data, production traffic, long-term retention, backups, and disaster recovery.
 - Microservices, multi-region operation, and independent domain deployments.
 
 ## Demonstration flow
 
 1. Open the developer console and enter the deployment-scoped console access code.
 2. Create an API key and copy its secret from the one-time response.
-3. Register and sign in an approved `@authforge.demo` user on the hosted identity page.
+3. Register an approved `@authforge.demo` label, open the verification link delivered to the configured evaluation inbox, and sign in. The inbox proves access to that test inbox, not ownership of the synthetic alias.
 4. Use the API key to create a session for that demo user.
 5. Validate the returned session token.
 6. Revoke the session or API key and show that subsequent validation fails.
@@ -72,7 +72,7 @@ docker compose up --build -d --wait
 
 Open http://127.0.0.1:8080 for demo signup/sign-in and http://127.0.0.1:8080/console for developer access. Without a `.env` file, the local console access code is `local-showcase-console-access-code`.
 
-Use only synthetic addresses such as `learner@authforge.demo` and a demo password of at least 12 characters. Create an API key in the console; keep it on the demo application backend. The console previews do not configure MFA, verification, redirects, or webhooks.
+Use only synthetic addresses such as `learner@authforge.demo` and a demo password of at least 12 characters. Create an API key in the console; keep it on the demo application backend. The console previews do not configure MFA, authorization-code redirects, or webhooks.
 
 Compose creates emulator resources, runs forward-only migrations, then starts the API and worker. Optional API `.env` overrides must keep `CONSOLE_ORIGIN` exactly equal to the address used in the browser. The worker and migration runner use separate optional `.env.worker` and `.env.migrate` files and need no console access code or digest key. Never reuse local example credentials for AWS.
 

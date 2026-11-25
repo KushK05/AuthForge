@@ -21,6 +21,11 @@ describe("loadConfig", () => {
       secureCookies: false
     });
   });
+  it("requires authentication mail sender and one configured test inbox as a pair", () => {
+    expect(() => loadConfig({...validEnvironment, AUTH_EMAIL_FROM_EMAIL: "sender@example.com"})).toThrow("both authentication email sender and test recipient");
+    expect(() => loadConfig({...validEnvironment, AUTH_EMAIL_FROM_EMAIL: "same@example.com", AUTH_EMAIL_TEST_RECIPIENT: "SAME@example.com"})).toThrow("must be different addresses");
+    expect(() => loadConfig({...validEnvironment, NODE_ENV: "production", SECURE_COOKIES: "true", CONSOLE_ORIGIN: "https://authforge.example.com", DATABASE_URL: "postgres://demo:demo@database.example.com/authforge?sslmode=verify-full", REDIS_URL: "rediss://redis.example.com:6379"})).toThrow("verified test recipient");
+  });
 
   it("rejects incomplete configuration without exposing values", () => {
     expect(() => loadConfig({ AWS_REGION: "us-east-1" })).toThrow(
@@ -34,7 +39,7 @@ describe("loadConfig", () => {
     expect(() => loadConfig({...validEnvironment, CONSOLE_ORIGIN: "http://localhost/path"})).toThrow("origin");
   });
   it("requires verified TLS and real AWS endpoints for deployed tasks", () => {
-    const deployed = {...validEnvironment, NODE_ENV: "production", SECURE_COOKIES: "true", CONSOLE_ORIGIN: "https://authforge.example.com", DATABASE_URL: "postgres://demo:demo@database.example.com/authforge?sslmode=verify-full", REDIS_URL: "rediss://redis.example.com:6379"};
+    const deployed = {...validEnvironment, NODE_ENV: "production", SECURE_COOKIES: "true", CONSOLE_ORIGIN: "https://authforge.example.com", DATABASE_URL: "postgres://demo:demo@database.example.com/authforge?sslmode=verify-full", REDIS_URL: "rediss://redis.example.com:6379", AUTH_EMAIL_FROM_EMAIL: "sender@example.com", AUTH_EMAIL_TEST_RECIPIENT: "learner@example.test"};
     expect(loadConfig(deployed).secureCookies).toBe(true);
     expect(() => loadConfig({...deployed, DATABASE_URL: validEnvironment.DATABASE_URL})).toThrow("verify-full");
     expect(() => loadConfig({...deployed, REDIS_URL: "redis://redis.example.com"})).toThrow("TLS");

@@ -9,17 +9,18 @@ import { PostgresShowcaseStore } from "../../src/platform/postgres-store.js";
 import { RedisConsoleRateLimiter } from "../../src/platform/redis.js";
 import { RedisValidationHints } from "../../src/platform/validation-hints.js";
 import { hashOpaqueSecret } from "../../src/shared/crypto/opaque-secret.js";
+import { FakeAuthEmailSender } from "../support/fake-auth-email-sender.js";
 
 // Only run against the explicitly provisioned disposable local test stack.
 const enabled = process.env.AUTHFORGE_LOCAL_INTEGRATION === "true";
 describe.skipIf(!enabled)("real PostgreSQL and Redis journey", () => {
-  const config = loadConfig({NODE_ENV: "test", LOG_LEVEL: "error", DATABASE_URL: "postgres://authforge:authforge@127.0.0.1:55432/authforge", REDIS_URL: "redis://127.0.0.1:56379", CONSOLE_ACCESS_CODE: "test-console-access-code", CREDENTIAL_HASH_KEY: "test-credential-hash-key-at-least-32"});
+  const config = loadConfig({NODE_ENV: "test", LOG_LEVEL: "error", DATABASE_URL: process.env.AUTHFORGE_TEST_DATABASE_URL ?? "postgres://authforge:authforge@127.0.0.1:55432/authforge", REDIS_URL: process.env.AUTHFORGE_TEST_REDIS_URL ?? "redis://127.0.0.1:56379", CONSOLE_ACCESS_CODE: "test-console-access-code", CREDENTIAL_HASH_KEY: "test-credential-hash-key-at-least-32", AUTH_EMAIL_FROM_EMAIL: "sender@authforge.demo", AUTH_EMAIL_TEST_RECIPIENT: "learner@authforge.demo"});
   const sql = postgres(config.databaseUrl, {max: 1, onnotice: () => {}});
   const store = new PostgresShowcaseStore(sql);
   const redis = new Redis(config.redisUrl, {lazyConnect: true, maxRetriesPerRequest: 1});
   const limiter = new RedisConsoleRateLimiter(redis, 2, 1, `test:${randomUUID()}:`);
   const hints = new RedisValidationHints(redis);
-  const app = buildApi(config, store, limiter, undefined, hints);
+  const app = buildApi(config, store, limiter, undefined, hints, new FakeAuthEmailSender());
   let headers: {origin: string; cookie: string; "x-csrf-token": string};
   beforeAll(async () => {
     await applyMigrations(sql);
@@ -33,7 +34,7 @@ describe.skipIf(!enabled)("real PostgreSQL and Redis journey", () => {
   it("applies the whole schema and is idempotent", async () => {
     expect(await applyMigrations(sql)).toEqual([]);
     const tables = await sql<{tablename: string}[]>`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`;
-    expect(tables.map(t => t.tablename).sort()).toEqual(["schema_migrations", "showcase_api_keys", "showcase_console_sessions", "showcase_outbox_events", "showcase_sessions", "showcase_user_sessions", "showcase_users", "showcase_worker_inbox"].sort());
+    expect(tables.map(t => t.tablename).sort()).toEqual(["schema_migrations", "showcase_api_keys", "showcase_console_sessions", "showcase_outbox_events", "showcase_sessions", "showcase_user_email_actions", "showcase_user_sessions", "showcase_users", "showcase_worker_inbox"].sort());
   });
 
   it("enforces key ownership, both revocation paths, expiry, and atomic outbox/cascade", async () => {
@@ -69,13 +70,14 @@ describe.skipIf(!enabled)("real PostgreSQL and Redis journey", () => {
     expect(await store.findSession(other.id, expired.tokenDigest, new Date())).toBeUndefined();
   });
 
-  it("enforces concurrent capacity and rolls back a user when session insertion fails", async () => {
+  it("enforces concurrent capacity and rolls back pending registration when its email action insert fails", async () => {
     const before = await store.listApiKeys();
     const results = await Promise.allSettled(Array.from({length: 3}, () => store.createApiKey({id: randomUUID(), name: "bounded", prefix: "sk_test", secretDigest: Buffer.from(randomUUID()), createdAt: new Date()}, before.length + 1)));
     expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
     const id = randomUUID();
     const user = {id, email: `${id}@authforge.demo`, passwordHash: "$argon2id$synthetic", createdAt: new Date()};
-    await expect(store.createUserAndSession(user, {id: randomUUID(), userId: randomUUID(), tokenDigest: Buffer.from(randomUUID()), csrfDigest: Buffer.from(randomUUID()), createdAt: new Date(), expiresAt: new Date(Date.now() + 60000)}, 100, 100)).rejects.toBeDefined();
+    const createdAt = new Date();
+    await expect(store.createPendingUser(user, {id: randomUUID(), userId: randomUUID(), purpose: "verify_email", tokenDigest: Buffer.alloc(32), createdAt, expiresAt: new Date(createdAt.getTime() + 60000)}, 100)).rejects.toBeDefined();
     expect(await store.findUserByEmail(user.email)).toBeUndefined();
   });
 

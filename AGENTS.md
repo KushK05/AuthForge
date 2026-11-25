@@ -9,7 +9,7 @@ When documents conflict, resolve them in this order: `docs/SECURITY.md`, `docs/A
 - Support a hosted demo-user registration and sign-in flow alongside the developer console, API-key lifecycle, and application-session lifecycle.
 - Use one deployment-scoped console operator. Do not build developer accounts or organization management.
 - Sessions use synthetic subject identifiers or approved demo-user identifiers supplied by the demo client.
-- Approved `@authforge.demo` users may register and sign in with Argon2id password hashes held only for the demo lifetime. Do not add public onboarding, email verification, password reset, profiles, roles, permissions, social login, MFA, billing, or long-lived user identity.
+- Approved `@authforge.demo` users may register and sign in with Argon2id password hashes held only for the demo lifetime. Email verification and password reset links go only to one operator-configured, SES-verified test inbox; this confirms access to the test inbox, not ownership of the synthetic `@authforge.demo` alias. Never accept arbitrary recipients. Do not add public onboarding, profiles, roles, permissions, social login, MFA, billing, or long-lived user identity.
 - Never use real personal, customer, or business data.
 
 ## Non-negotiable AWS classroom architecture
@@ -17,7 +17,7 @@ When documents conflict, resolve them in this order: `docs/SECURITY.md`, `docs/A
 - Build one API and one worker from the same TypeScript and Fastify codebase.
 - Run the API, worker, and disposable Redis process on one small EC2 instance.
 - Use RDS PostgreSQL for temporary authoritative user, API-key, session, and outbox records.
-- Process outbox events directly in classroom mode. Write redacted event artifacts to S3 and exercise SES only with the mailbox simulator.
+- Process outbox events directly in classroom mode. Write redacted event artifacts to S3 and use SES mailbox simulator for lifecycle events. The sole account-action email exception is the configured verified test inbox.
 - Send API and worker logs to CloudWatch. Use IAM, a narrow VPC/security-group boundary, and Terraform as supporting controls.
 - Do not deploy ECS, ElastiCache, SQS, ALB, WAF, NAT Gateway, CloudFront, Route 53, KMS, ECR, or Secrets Manager for the classroom showcase.
 - Destroy the entire environment after evaluation. Do not retain snapshots, backups, buckets, queues, logs, secrets, or databases.
@@ -43,7 +43,7 @@ The five demonstrated services are EC2, RDS, SES, S3, and CloudWatch. Keep each 
 - Scope every application session to the API key that created it. Other API keys must not discover or revoke it.
 - Validate all untrusted HTTP input and use the stable error shape in `docs/API_CONTRACTS.md`.
 - Use short, bounded session lifetimes. Expired and revoked sessions must fail validation.
-- Put only identifiers and redacted synthetic metadata in SQS, S3, SES, logs, metrics, and traces.
+- Put only identifiers and redacted synthetic metadata in SQS, S3, logs, metrics, and traces. SES lifecycle messages use the simulator; the configured test inbox may receive short-lived account-action links.
 - Database migrations are forward-only and limited to the minimal tables in `docs/DATA_MODEL.md`.
 
 ## Required verification
@@ -52,4 +52,4 @@ Run the smallest relevant unit and integration tests while working, then the com
 
 ## When to stop and ask
 
-Ask before adding real user data, non-simulator email, data retention after teardown, a public production commitment, another deployable service, another database, another queue, or an AWS service outside the documented evaluation set. Surface uncertainty explicitly.
+Ask before adding real user data, any email recipient beyond the single explicitly configured and SES-verified test inbox, data retention after teardown, a public production commitment, another deployable service, another database, another queue, or an AWS service outside the documented evaluation set. Surface uncertainty explicitly.

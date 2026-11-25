@@ -12,7 +12,8 @@ Redis and S3 are part of the AWS evaluation but are not alternate authorities. R
 | --- | --- |
 | `showcase_console_sessions` | `id`, `token_digest`, `csrf_digest`, `created_at`, `expires_at`, `revoked_at`; no developer identity fields. |
 | `showcase_api_keys` | `id`, `name`, `prefix`, `secret_digest`, `created_at`, `revoked_at`; unique digest and non-secret prefix. |
-| `showcase_users` | `id`, normalized approved demo email, Argon2id password hash, `created_at`, `disabled_at`; no profile fields. |
+| `showcase_users` | `id`, normalized approved demo email label, Argon2id password hash, `email_verified_at`, `created_at`, `disabled_at`; no profile fields. |
+| `showcase_user_email_actions` | `id`, `user_id`, purpose, keyed token digest, creation/expiry/consumption timestamps; one-time verification or reset action only. |
 | `showcase_user_sessions` | `id`, `user_id`, token and CSRF digests, `created_at`, `expires_at`, `revoked_at`; browser-authentication session. |
 | `showcase_sessions` | `id`, `api_key_id`, `subject`, `token_digest`, `created_at`, `expires_at`, `revoked_at`; unique digest and indexed ownership. |
 | `showcase_outbox_events` | `id`, `event_type`, `event_version`, redacted JSON payload, `created_at`, `published_at`, `discarded_at`. |
@@ -23,7 +24,7 @@ Do not add organizations, projects, environments, roles, permissions, refresh to
 ## Sensitive-field rules
 
 - API-key, session-token, console-cookie, user-session cookie, and CSRF values use cryptographically secure randomness.
-- Passwords are stored only as Argon2id hashes. User email is restricted to the `@authforge.demo` demonstration domain.
+- Passwords are stored only as Argon2id hashes. User email labels are restricted to the `@authforge.demo` domain. SES account-action messages go only to one configured, verified evaluation inbox.
 - PostgreSQL stores only keyed digests of raw credential values.
 - Prefixes and names are display metadata and must not contain real secrets or personal data.
 - The raw API key and session token appear only in their creation response.
@@ -36,7 +37,7 @@ Do not add organizations, projects, environments, roles, permissions, refresh to
 3. Expired or revoked credentials never authenticate.
 4. Other API keys cannot discover or revoke a session they do not own.
 5. Every mutation and its outbox event commit together.
-6. SQS, S3, SES, logs, metrics, and traces never receive raw credentials or subjects.
+6. SQS, S3, logs, metrics, and traces never receive raw credentials or subjects. SES receives lifecycle events only at the mailbox simulator; the sole account-action recipient is the configured test inbox and receives time-limited links.
 7. All application records are deleted with the temporary environment.
 
 ## Redis records
@@ -63,7 +64,7 @@ Migrations are forward-only and reviewable. They run before the API and worker t
 
 Historical migrations are immutable. Migration `0013_restore_showcase_contract` removes the superseded `previous_token_digest` column and adds a positive user-session lifetime constraint. The complete migration chain ends with the seven showcase tables plus the migration ledger; the old product tables are dropped by migration 0009.
 
-Registration inserts the demo user and initial browser session in one transaction. Creation limits use a transaction-scoped advisory lock so concurrent requests cannot exceed the configured showcase capacity. Session creation and key revocation use the same lock and validate key status inside the transaction.
+Registration inserts a pending demo user and keyed verification-action digest in one transaction. Verification consumes the one-time action and creates the first browser session atomically. Password reset consumes its action, updates the Argon2id hash, and revokes the user’s active browser sessions in one transaction. Raw action tokens exist only in the SES message and immediate browser request. Creation limits use a transaction-scoped advisory lock so concurrent requests cannot exceed the configured showcase capacity. Session creation and key revocation use the same lock and validate key status inside the transaction.
 
 Hosted CSRF values are derived with a domain-separated HMAC from the random browser cookie and credential hash key. Only their digests are stored; `/auth/me` can reproduce the proof without storing raw secrets.
 

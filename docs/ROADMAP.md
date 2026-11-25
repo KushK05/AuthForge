@@ -4,9 +4,9 @@ Build the smallest complete product and AWS evaluation path. A milestone is comp
 
 ## M0 - narrow the domain
 
-Remove organizations, tenant projects, environments, public user management, email verification, password reset, roles, permissions, JWT/JWKS, refresh-token families, and durable audit-product requirements. Keep approved demo users and Argon2id passwords under ADR-010, TypeScript, Fastify, PostgreSQL migrations, Redis, the API/worker topology, and AWS adapters needed by the evaluation.
+Remove organizations, tenant projects, environments, public user management, arbitrary-recipient email, profiles, roles, permissions, JWT/JWKS, refresh-token families, and durable audit-product requirements. Keep approved demo users and Argon2id passwords under ADR-010, TypeScript, Fastify, PostgreSQL migrations, Redis, the API/worker topology, and AWS adapters needed by the evaluation.
 
-Exit criteria: docs, source layout, configuration, dependencies, and tests describe only the console, API keys, sessions, showcase events, and required AWS services.
+Exit criteria: docs, source layout, configuration, dependencies, and tests describe only the console, demo-user registration/verification/sign-in/reset, API keys, sessions, showcase events, and required AWS services.
 
 ## M1 - console and API keys
 

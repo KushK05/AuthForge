@@ -16,6 +16,19 @@ variable "ses_simulator_email" {
     error_message = "Use only an SES mailbox simulator recipient."
   }
 }
+variable "auth_email_test_recipient" {
+  type        = string
+  description = "One exact, user-controlled, SES-verified inbox used for demo verification and password reset links."
+  validation {
+    condition = alltrue([
+      can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.auth_email_test_recipient)),
+      lower(var.auth_email_test_recipient) != lower(var.ses_simulator_email),
+      lower(var.auth_email_test_recipient) != lower(var.ses_from_email),
+      !endswith(lower(var.auth_email_test_recipient), "@authforge.demo")
+    ])
+    error_message = "Use a separate SES-verified test inbox, not the sender, simulator, or synthetic demo domain."
+  }
+}
 variable "evaluation_owner" {
   type = string
   validation {

@@ -55,7 +55,7 @@ Do not substitute, omit, or add services without an approved scope decision.
 - Use single-AZ, smallest practical RDS and Redis configurations accepted by the evaluation.
 - Disable RDS deletion protection, automated backups, and final snapshots.
 - Keep CloudWatch and S3 retention at the shortest evaluation-compatible duration.
-- Keep SES in sandbox. Never use a real recipient.
+- Keep SES in sandbox; use the mailbox simulator for lifecycle-event messages and only the one explicitly configured, verified test inbox for hosted verification/reset links.
 - Do not create standby capacity, read replicas, autoscaling above one task, NAT capacity beyond the minimum design, or multi-region resources.
 - Set an explicit teardown time and owner before apply.
 
@@ -104,7 +104,7 @@ Local preparation does not run `terraform apply` and incurs no AWS service charg
 
 The runtime uses opaque tokens, so no asymmetric JWT signing key or signing permission is required. KMS remains required for storage, queues, logs, ECR, and Secrets Manager encryption. The worker's S3 permission matches `showcase-events/*`.
 
-The standard SES API is used for free LocalStack compatibility. Before any real AWS evaluation, verify the generated `mail.<showcase-hostname>` sender domain through its three Terraform-managed DKIM CNAMEs; the local emulator's sender verification is not evidence that AWS SES has verified an identity. Keep only simulator recipients and do not purchase a domain or request production SES access as part of local preparation.
+The standard SES API is used for free LocalStack compatibility. Before any real AWS evaluation, verify the generated `mail.<showcase-hostname>` sender domain through its three Terraform-managed DKIM CNAMEs; the local emulator's sender verification is not evidence that AWS SES has verified an identity. Keep the worker on the mailbox simulator. Hosted account actions require exactly one operator-supplied test inbox verified in the same SES region; never configure arbitrary recipients or request SES production access. The deploy preflight confirms sender and recipient identities before creating a plan.
 
 Worker log metric filters create `AuthForge/Showcase` success, failure, and publication-failure metrics. AWS-only observability and teardown must still be checked during the separately approved evaluation.
 
@@ -112,7 +112,7 @@ Worker log metric filters create `AuthForge/Showcase` success, failure, and publ
 
 The image includes the public [AWS RDS trust bundle](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html). ECS uses `sslmode=verify-full`, verified Redis TLS, and direct Node process commands for signal handling. Deployed configuration rejects local emulator endpoints and refuses to start a worker without queue, encrypted artifact, and SES simulator settings.
 
-SES verifies the dedicated infrastructure domain `mail.<showcase-hostname>` using DNS. The fixed sender is `showcase@mail.<showcase-hostname>`; it is not a demo-user identity or real mailbox. No verification email is sent. [AWS requires sender verification even for simulator delivery](https://docs.aws.amazon.com/ses/latest/dg/verify-addresses-and-domains.html). Demo-user emails remain restricted to `@authforge.demo`. Worker IAM additionally restricts both sender and simulator destination. Select `ses_dkim_domain` using the [regional SES DKIM table](https://docs.aws.amazon.com/general/latest/gr/ses.html).
+SES verifies the dedicated infrastructure domain `mail.<showcase-hostname>` using DNS. The fixed sender is `showcase@mail.<showcase-hostname>`; it is not a demo-user identity or real mailbox. No verification email is sent. [AWS requires sender verification even for simulator delivery](https://docs.aws.amazon.com/ses/latest/dg/verify-addresses-and-domains.html). Demo-user emails remain restricted to `@authforge.demo`. IAM restricts the worker to the simulator destination and the API to the fixed sender plus the configured test inbox. The classroom runbook requires the test inbox value in the ignored tfvars file. Select `ses_dkim_domain` using the [regional SES DKIM table](https://docs.aws.amazon.com/general/latest/gr/ses.html).
 
 Use `npm run infra:check` for formatting, validation, and five mocked Terraform test scenarios. After the initial plugin download (`bash scripts/infra-check.sh --init`), checks run in a container with networking disabled and no mounted AWS credentials. Mocked test applies create fake state only; they do not provision AWS resources. They test topology and variable logic, not actual AWS permissions, quotas, TLS handshakes, or SES verification.
 

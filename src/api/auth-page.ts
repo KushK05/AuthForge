@@ -1,26 +1,15 @@
-export const authPage = String.raw`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AuthForge | Identity for your demo</title><style>
-:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#142b3a;background:#f5f7fb}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 18% 12%,#dceaff 0,transparent 31%),radial-gradient(circle at 86% 76%,#e8dfff 0,transparent 32%),#f5f7fb}button,input{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible{outline:3px solid #7fa7ff;outline-offset:2px}.shell{width:min(1180px,100%);margin:auto;padding:28px 30px 54px}.nav{display:flex;align-items:center;justify-content:space-between}.brand{display:flex;align-items:center;gap:11px;font-size:19px;font-weight:760;letter-spacing:-.04em}.mark{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;color:#fff;background:linear-gradient(135deg,#4057c8,#7857db);box-shadow:0 6px 18px #6a67c848}.console-link{color:#39506a;text-decoration:none;font-size:13px;font-weight:650;padding:9px 12px;border:1px solid #cfdae5;border-radius:8px;background:#ffffffaa}.layout{display:grid;grid-template-columns:minmax(0,1.1fr) 430px;gap:72px;align-items:center;min-height:calc(100vh - 128px)}h1{font-size:clamp(42px,5.2vw,68px);letter-spacing:-.065em;line-height:.99;margin:0;max-width:650px}.lead{max-width:560px;font-size:17px;line-height:1.65;color:#526879;margin:24px 0 36px}.proof{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:610px}.proof div{border-top:1px solid #cad7e5;padding-top:12px;color:#647887;font-size:12px;line-height:1.45}.proof strong{display:block;font-size:14px;color:#243e51;margin-bottom:3px}.card{padding:30px;background:#fff;border:1px solid #d8e2ed;border-radius:18px;box-shadow:0 24px 60px #233a501c}.eyebrow{font-size:12px;font-weight:750;color:#596fd3;letter-spacing:.04em}.card h2{font-size:27px;letter-spacing:-.045em;margin:8px 0}.card p{font-size:13px;color:#65798a;line-height:1.55;margin:0 0 22px}.tabs{display:grid;grid-template-columns:1fr 1fr;background:#f0f3f8;border-radius:9px;padding:4px;margin-bottom:22px}.tab{border:0;background:transparent;padding:9px;border-radius:6px;font-size:13px;font-weight:700;color:#647787}.tab.active{background:#fff;color:#263e50;box-shadow:0 1px 4px #27394d1c}.form{display:grid;gap:15px}.field{display:grid;gap:7px}.field label{font-size:12px;font-weight:700;color:#344c5d}.field input{width:100%;border:1px solid #cbd8e5;border-radius:8px;padding:12px;background:#fff;color:#1c3342}.field input:focus{border-color:#647fe4;box-shadow:0 0 0 3px #e3eaff}.hint{font-size:11px;color:#788b9a;line-height:1.45}.submit{border:0;border-radius:8px;background:linear-gradient(110deg,#4058c9,#7357d7);padding:12px;color:#fff;font-weight:750;box-shadow:0 10px 18px #6168c540}.submit:disabled{opacity:.6;cursor:wait}.error{min-height:19px;margin:0;color:#b8404a;font-size:12px;line-height:1.45}.account{display:grid;gap:16px}.account-card{border:1px solid #dce5ed;border-radius:11px;padding:17px;background:#fbfcfe}.account-card strong{display:block;font-size:15px}.account-card span{display:block;color:#647987;font-size:12px;margin-top:4px}.signout{justify-self:start;border:1px solid #d8c3c5;color:#9b3f47;background:#fff;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700}.notice{margin-top:17px;font-size:11px;color:#70808d;line-height:1.55}@media(max-width:850px){.layout{grid-template-columns:1fr;gap:40px;padding-top:68px}.card{max-width:500px}.proof{max-width:560px}}@media(max-width:520px){.shell{padding:21px 18px 40px}.layout{padding-top:46px}.proof{grid-template-columns:1fr}.card{padding:23px}h1{font-size:44px}}
-    /* Product identity override - the hosted surface is an identity-routing workspace. */
-    :root{color:#dbe8ed;background:#0b1720}.shell{position:relative;isolation:isolate;width:min(1320px,100%);padding:30px 44px 44px}.shell:before{content:"";position:fixed;inset:0;z-index:-2;background:linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),#0b1720;background-size:56px 56px}.shell:after{content:"";position:fixed;inset:0;z-index:-1;background:radial-gradient(ellipse 60% 50% at 8% 92%,#1d536844,transparent),radial-gradient(ellipse 42% 44% at 88% 8%,#274e6644,transparent)}.nav{padding-bottom:26px;border-bottom:1px solid #2a3e49}.brand{color:#eff7f8;font-size:18px;letter-spacing:-.025em}.mark{border-radius:7px;background:#d8f26b;color:#15232a;box-shadow:none;font-size:15px}.console-link{border:1px solid #3a5561;border-radius:6px;background:transparent;color:#d7e6e9;padding:9px 13px}.console-link:hover{border-color:#d8f26b;color:#d8f26b}.layout{grid-template-columns:minmax(0,1.35fr) 420px;gap:96px;min-height:calc(100vh - 132px);position:relative}.layout>section:first-child{position:relative;padding:42px 0 118px}.layout>section:first-child:after{content:"";position:absolute;width:460px;height:260px;bottom:0;left:0;background:radial-gradient(circle at 18px 194px,#d8f26b 0 5px,transparent 6px),radial-gradient(circle at 184px 100px,#77ced5 0 5px,transparent 6px),radial-gradient(circle at 351px 42px,#d8f26b 0 5px,transparent 6px),linear-gradient(146deg,transparent 0 28%,#416573 28.3% 28.7%,transparent 29% 53%,#416573 53.3% 53.7%,transparent 54% 100%);opacity:.85}.layout>section:first-child:before{content:"IDENTITY ROUTE / DEMO ENVIRONMENT";position:absolute;bottom:243px;left:0;color:#84a3ae;font:600 11px ui-monospace,SFMono-Regular,monospace;letter-spacing:.1em}h1{color:#f3f8f9;font-size:clamp(47px,5.5vw,76px);font-weight:620;letter-spacing:-.065em;max-width:720px}.lead{color:#9eb6bf;max-width:570px;font-size:16px}.proof{max-width:660px;gap:24px}.proof div{border-top-color:#38515c;color:#8ea7b0}.proof strong{color:#f3f8f9;font-weight:650}.card{border:1px solid #405661;border-radius:10px;background:#f4f7f6;color:#122631;padding:32px;box-shadow:24px 24px 0 #182c36}.eyebrow{color:#426873;font:700 11px ui-monospace,SFMono-Regular,monospace;letter-spacing:.1em}.card h2{font-size:29px;color:#122631}.card p{color:#5e747e}.tabs{padding:0;border-radius:0;background:transparent;border-bottom:1px solid #cad6d9}.tab{border-radius:0;padding:10px 5px;color:#718690;text-align:left}.tab.active{background:transparent;box-shadow:inset 0 -2px #173f4c;color:#12323e}.field label{color:#2b4854}.field input{border-radius:5px;border-color:#bdccd0;background:#fff;padding:13px}.field input:focus{border-color:#244f5d;box-shadow:0 0 0 3px #d7e8e7}.submit{border-radius:5px;background:#173f4c;box-shadow:none;padding:13px}.submit:hover{background:#0d2d38}.notice{border-top:1px solid #d2dddf;padding-top:15px}.account-card{border-radius:6px;background:#fff;border-left:3px solid #d8f26b}.signout{border-radius:5px}@media(max-width:850px){.shell{padding:22px 24px 42px}.layout{gap:46px}.layout>section:first-child{padding-bottom:92px}.layout>section:first-child:after{transform:scale(.75);transform-origin:left bottom}}@media(max-width:520px){.shell{padding:18px}.layout>section:first-child:after{display:none}.layout>section:first-child:before{bottom:24px}.card{box-shadow:10px 10px 0 #182c36}}
-</style></head><body><div class="shell"><nav class="nav"><div class="brand"><span class="mark">A</span>AuthForge</div><a class="console-link" href="/console">Developer console</a></nav><main class="layout"><section><h1>Identity that feels ready for the real thing.</h1><p class="lead">Run a credible authentication demo with hosted registration, secure password sign-in, managed sessions, and a developer console for your integration.</p><div class="proof"><div><strong>Demo-only identities</strong>Approved <code>@authforge.demo</code> accounts keep the evaluation safe.</div><div><strong>Protected sessions</strong>HTTP-only cookies and server-side expiry protect the hosted flow.</div><div><strong>Temporary by design</strong>All application data is deleted when the AWS demo environment is destroyed.</div></div></section><section class="card" aria-live="polite"><div id="auth-form"><div class="eyebrow">HOSTED IDENTITY</div><h2 id="form-title">Create your demo account</h2><p id="form-copy">Use an approved demonstration email to get started.</p><div class="tabs"><button class="tab active" data-mode="register" type="button">Create account</button><button class="tab" data-mode="login" type="button">Sign in</button></div><form id="form" class="form" novalidate><div class="field"><label for="email">Demo email</label><input id="email" type="email" autocomplete="email" placeholder="you@authforge.demo" required><span class="hint">Only approved @authforge.demo addresses are accepted.</span></div><div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="new-password" required><span id="password-hint" class="hint">Use at least 12 characters.</span></div><button id="submit" class="submit" type="submit">Create account</button><p id="error" class="error" role="status"></p></form></div><div id="account" class="account" hidden><div class="eyebrow">SIGNED IN</div><h2>Your account is ready.</h2><p>Your hosted session is active. Return to the relying application to continue the demo.</p><div class="account-card"><strong id="account-email"></strong><span>Approved demo identity</span></div><p id="signout-error" role="status"></p><button id="signout" class="signout" type="button">Sign out</button></div><p class="notice">AuthForge is an evaluation environment, not a public production service. Use synthetic demonstration details only.</p></section></main></div><script src="/auth.js" defer></script></body></html>`;
+export const authPage = String.raw`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>AuthForge | Demo identity</title><style>
+:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#dbe8ed;background:#0b1720}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),radial-gradient(ellipse 48% 38% at 9% 92%,#1d536844,transparent),radial-gradient(ellipse 42% 40% at 88% 8%,#274e6644,transparent),#0b1720;background-size:56px 56px,56px 56px,auto,auto,auto}button,input{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible{outline:3px solid #77ced5;outline-offset:2px}.shell{width:min(1320px,100%);margin:auto;padding:30px 44px 44px}.nav{display:flex;align-items:center;justify-content:space-between;padding-bottom:26px;border-bottom:1px solid #2a3e49}.brand{display:flex;align-items:center;gap:11px;color:#eff7f8;font-size:18px;font-weight:760;letter-spacing:-.025em}.mark{width:32px;height:32px;display:grid;place-items:center;border-radius:7px;color:#15232a;background:#d8f26b;font-size:15px}.console-link{padding:9px 13px;border:1px solid #3a5561;border-radius:6px;color:#d7e6e9;text-decoration:none;font-size:13px;font-weight:650}.console-link:hover{border-color:#d8f26b;color:#d8f26b}.layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,420px);gap:clamp(40px,8vw,96px);align-items:center;min-height:calc(100vh - 132px)}.intro{position:relative;padding:42px 0 110px}.intro:after{content:"";position:absolute;width:min(460px,85vw);height:180px;bottom:0;left:0;background:radial-gradient(circle at 18px 138px,#d8f26b 0 5px,transparent 6px),radial-gradient(circle at 184px 76px,#77ced5 0 5px,transparent 6px),radial-gradient(circle at 351px 20px,#d8f26b 0 5px,transparent 6px),linear-gradient(146deg,transparent 0 28%,#416573 28.3% 28.7%,transparent 29% 53%,#416573 53.3% 53.7%,transparent 54% 100%);opacity:.8}.intro:before{content:"IDENTITY ROUTE / DEMO ENVIRONMENT";position:absolute;bottom:190px;left:0;color:#84a3ae;font:600 11px ui-monospace,SFMono-Regular,monospace;letter-spacing:.1em}h1{max-width:720px;margin:0;color:#f3f8f9;font-size:clamp(47px,5.5vw,76px);font-weight:620;letter-spacing:-.065em;line-height:.99}.lead{max-width:570px;margin:24px 0 36px;color:#9eb6bf;font-size:16px;line-height:1.65}.proof{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;max-width:660px}.proof div{border-top:1px solid #38515c;padding-top:12px;color:#8ea7b0;font-size:12px;line-height:1.5}.proof strong{display:block;margin-bottom:3px;color:#f3f8f9;font-size:14px;font-weight:650}.card{position:relative;padding:32px;border:1px solid #405661;border-radius:10px;background:#f4f7f6;color:#122631;box-shadow:24px 24px 0 #182c36}.eyebrow{color:#426873;font:700 11px ui-monospace,SFMono-Regular,monospace;letter-spacing:.1em}.card h2{margin:8px 0;font-size:29px;letter-spacing:-.045em;color:#122631}.card-copy{margin:0 0 22px;color:#5e747e;font-size:13px;line-height:1.55}.tabs{display:grid;grid-template-columns:1fr 1fr;margin-bottom:22px;border-bottom:1px solid #cad6d9}.tab{border:0;border-radius:0;background:transparent;padding:10px 5px;color:#718690;text-align:left;font-size:13px;font-weight:700}.tab[aria-pressed="true"]{box-shadow:inset 0 -2px #173f4c;color:#12323e}.form{display:grid;gap:15px}.field{display:grid;gap:7px}.field label{color:#2b4854;font-size:12px;font-weight:700}.field input{width:100%;border:1px solid #bdccd0;border-radius:5px;background:#fff;padding:13px;color:#1c3342}.field input:focus{border-color:#244f5d;box-shadow:0 0 0 3px #d7e8e7}.hint{color:#788b9a;font-size:11px;line-height:1.45}.password-wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.password-toggle{min-width:64px;border:1px solid #bdccd0;border-radius:5px;background:#fff;padding:0 10px;color:#35535d;font-size:12px;font-weight:700}.submit{min-height:46px;border:0;border-radius:5px;background:#173f4c;padding:13px;color:#fff;font-weight:750}.submit:hover{background:#0d2d38}.submit:disabled{opacity:.65;cursor:wait}.secondary{justify-self:start;border:0;background:transparent;padding:2px 0;color:#315762;text-decoration:underline;text-underline-offset:3px;font-size:12px;font-weight:650}.error{min-height:19px;margin:0;color:#a43139;font-size:12px;line-height:1.45}.status{min-height:19px;margin:0;color:#236c48;font-size:12px;line-height:1.45}.pending{border-left:3px solid #d8f26b;padding:4px 0 4px 15px}.pending p{margin:8px 0 0;color:#4c6871;font-size:13px;line-height:1.55}.pending-actions{display:flex;flex-wrap:wrap;gap:18px;margin-top:16px}.account{display:grid;gap:16px}.account h2{margin:0}.account p{margin:0;color:#5e747e;font-size:13px;line-height:1.55}.account-card{border:1px solid #dce5ed;border-radius:6px;border-left:3px solid #d8f26b;background:#fff;padding:17px}.account-card strong{display:block;overflow-wrap:anywhere;font-size:15px}.account-card span{display:block;margin-top:4px;color:#647987;font-size:12px}.signout{justify-self:start;border:1px solid #d8c3c5;border-radius:5px;background:#fff;padding:9px 12px;color:#9b3f47;font-size:12px;font-weight:700}.notice{margin-top:17px;border-top:1px solid #d2dddf;padding-top:15px;color:#70808d;font-size:11px;line-height:1.55}[hidden]{display:none!important}@media(max-width:850px){.shell{padding:22px 24px 42px}.layout{grid-template-columns:minmax(0,1fr);gap:28px;padding-top:38px}.intro{padding:8px 0 48px}.intro:before,.intro:after{display:none}.proof{max-width:620px}.card{max-width:520px;width:100%}}@media(max-width:520px){.shell{padding:18px}.layout{gap:22px;padding-top:32px}.proof{grid-template-columns:minmax(0,1fr);gap:14px}.card{padding:23px;box-shadow:10px 10px 0 #182c36}h1{font-size:clamp(43px,13vw,54px)}.lead{margin:20px 0 24px}.password-wrap{grid-template-columns:minmax(0,1fr) 68px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+</style></head><body><div class="shell"><nav class="nav"><div class="brand"><span class="mark">A</span>AuthForge</div><a class="console-link" href="/console">Developer console</a></nav><main class="layout"><section class="intro"><h1>Identity that feels ready for the real thing.</h1><p class="lead">Register a demo identity, verify it from the configured test inbox, and manage a short-lived hosted session.</p><div class="proof"><div><strong>Demo-only identities</strong>Only approved <code>@authforge.demo</code> addresses are accepted.</div><div><strong>Verified sign-in</strong>Email verification must finish before password sign-in works.</div><div><strong>Temporary by design</strong>All account data is deleted with the evaluation environment.</div></div></section><section class="card" aria-live="polite"><div id="auth-form"><div class="eyebrow">HOSTED IDENTITY</div><h2 id="form-title">Create your demo account</h2><p id="form-copy" class="card-copy">Use an approved demonstration email to get started.</p><div id="tabs" class="tabs" role="group" aria-label="Account access"><button class="tab" data-mode="register" aria-pressed="true" type="button">Create account</button><button class="tab" data-mode="login" aria-pressed="false" type="button">Sign in</button></div><form id="form" class="form" novalidate><div id="email-field" class="field"><label for="email">Demo email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" placeholder="you@authforge.demo" required aria-describedby="email-hint error"><span id="email-hint" class="hint">Verification and reset links go to the configured test inbox.</span></div><div id="password-field" class="field"><label for="password" id="password-label">Password</label><div class="password-wrap"><input id="password" name="password" type="password" autocomplete="new-password" maxlength="256" aria-describedby="password-hint error"><button id="password-toggle" class="password-toggle" type="button" aria-label="Show password" aria-pressed="false">Show</button></div><span id="password-hint" class="hint">Use at least 12 characters.</span></div><button id="submit" class="submit" type="submit">Create account</button><button id="forgot-password" class="secondary" type="button">Forgot password?</button><p id="error" class="error" role="alert" aria-live="assertive"></p><p id="status" class="status" role="status" aria-live="polite"></p></form><div id="pending" class="pending" hidden><div class="eyebrow" id="pending-title">CHECK THE TEST INBOX</div><p id="pending-copy">If the account can be registered, a verification link has been sent.</p><div class="pending-actions"><button id="resend-verification" class="secondary" type="button">Resend verification email</button><button id="back-to-signin" class="secondary" type="button">Back to sign in</button></div><p id="pending-status" class="status" role="status" aria-live="polite"></p></div></div><div id="account" class="account" hidden><div class="eyebrow">SIGNED IN</div><h2>Your account is ready.</h2><p>Your hosted session is active. Return to the relying application to continue the demo.</p><div class="account-card"><strong id="account-email"></strong><span>Verified demo identity</span></div><p id="signout-error" class="error" role="status"></p><button id="signout" class="signout" type="button">Sign out</button></div><p class="notice">AuthForge is a temporary evaluation environment. Use synthetic demonstration details only.</p></section></main></div><script src="/auth.js" defer></script></body></html>`;
 
 export const authClient = String.raw`(() => {
-  let mode = "register", csrf = "";
+  let mode = "register", csrf = "", pendingEmail = "", actionToken = "";
   const $ = id => document.getElementById(id);
-  const setMode = next => {
-    mode = next;
-    document.querySelectorAll("[data-mode]").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
-    $("form-title").textContent = mode === "register" ? "Create your demo account" : "Welcome back";
-    $("form-copy").textContent = mode === "register" ? "Use an approved demonstration email to get started." : "Sign in to your hosted demo session.";
-    $("submit").textContent = mode === "register" ? "Create account" : "Sign in";
-    $("password").autocomplete = mode === "register" ? "new-password" : "current-password";
-    $("error").textContent = "";
-  };
   const api = async (url, opts = {}) => {
     const headers = new Headers(opts.headers || {});
     if (opts.body) headers.set("content-type", "application/json");
     if (csrf && opts.method === "DELETE") headers.set("x-csrf-token", csrf);
-    const response = await fetch(url, {...opts, headers, credentials: "same-origin"});
+    const response = await fetch(url, {...opts, headers, credentials: "same-origin", cache: "no-store"});
     const data = response.status === 204 ? null : await response.json().catch(() => ({}));
     if (!response.ok) throw Object.assign(new Error(data.error?.message || "Request failed. Try again."), {status: response.status});
     return data;
@@ -31,38 +20,101 @@ export const authClient = String.raw`(() => {
     $("account-email").textContent = user.email;
     $("signout-error").textContent = "";
   };
-  document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  const setMode = next => {
+    mode = next;
+    const formMode = mode === "register" || mode === "login";
+    const hasEmail = mode === "register" || mode === "login" || mode === "reset-request";
+    const hasPassword = mode === "register" || mode === "login" || mode === "reset-confirm";
+    $("tabs").hidden = !formMode;
+    $("email-field").hidden = !hasEmail;
+    $("password-field").hidden = !hasPassword;
+    $("forgot-password").hidden = mode !== "login";
+    $("password-hint").hidden = mode === "login" || mode === "verify-email";
+    $("password").required = mode === "register" || mode === "login" || mode === "reset-confirm";
+    $("password").autocomplete = mode === "login" ? "current-password" : "new-password";
+    $("password-label").textContent = mode === "reset-confirm" ? "New password" : "Password";
+    $("form-title").textContent = ({register:"Create your demo account",login:"Welcome back","verify-email":"Verify your email","reset-request":"Reset your password","reset-confirm":"Choose a new password"})[mode];
+    $("form-copy").textContent = ({register:"Use an approved demonstration email to get started.",login:"Sign in to your verified demo account.","verify-email":"Confirm the one-time link sent to the configured test inbox.","reset-request":"Enter your demo email and we will send a reset link if the account is eligible.","reset-confirm":"Choose a new password for your demo account."})[mode];
+    $("submit").textContent = ({register:"Create account",login:"Sign in","verify-email":"Verify email","reset-request":"Send reset link","reset-confirm":"Reset password"})[mode];
+    $("error").textContent = "";
+    $("status").textContent = "";
+    document.querySelectorAll("[data-mode]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.mode === mode)));
+    document.title = mode === "login" ? "Sign in | AuthForge" : mode.startsWith("reset") ? "Reset password | AuthForge" : mode === "verify-email" ? "Verify email | AuthForge" : "Register | AuthForge";
+  };
+  const showPending = (title, message, email = "") => {
+    $("form").hidden = true;
+    $("pending").hidden = false;
+    $("pending-title").textContent = title;
+    $("pending-copy").textContent = message;
+    $("resend-verification").hidden = !email;
+    $("back-to-signin").hidden = false;
+    $("pending-status").textContent = "";
+    pendingEmail = email;
+  };
+  document.querySelectorAll("[data-mode]").forEach(button => button.addEventListener("click", () => {
+    $("form").hidden = false; $("pending").hidden = true; setMode(button.dataset.mode);
+  }));
+  $("forgot-password").addEventListener("click", () => setMode("reset-request"));
+  $("back-to-signin").addEventListener("click", () => {$("form").hidden=false;$("pending").hidden=true;setMode("login");$("email").focus();});
+  $("password-toggle").addEventListener("click", () => {
+    const show = $("password").type === "password";
+    $("password").type = show ? "text" : "password";
+    $("password-toggle").textContent = show ? "Hide" : "Show";
+    $("password-toggle").setAttribute("aria-label", (show ? "Hide" : "Show") + " password");
+    $("password-toggle").setAttribute("aria-pressed", String(show));
+    $("password").focus();
+  });
   $("form").addEventListener("submit", async event => {
     event.preventDefault();
-    $("error").textContent = "";
-    const email = $("email").value, password = $("password").value;
-    if (!email || !password) { $("error").textContent = "Enter your demo email and password."; return; }
-    const button = $("submit");
-    button.disabled = true;
-    button.textContent = mode === "register" ? "Creating account…" : "Signing in…";
+    $("error").textContent = ""; $("status").textContent = "";
+    const email = $("email").value.trim(), password = $("password").value;
+    if ((mode === "register" || mode === "login" || mode === "reset-request") && !email) {$("error").textContent="Enter your demo email.";$("email").focus();return;}
+    if ((mode === "register" || mode === "login" || mode === "reset-confirm") && password.length < 12) {$("error").textContent="Use a password with at least 12 characters.";$("password").focus();return;}
+    const button = $("submit"), idleLabel = button.textContent;
+    button.disabled = true; button.setAttribute("aria-busy", "true");
+    button.textContent = mode === "register" ? "Creating account..." : mode === "login" ? "Signing in..." : mode === "verify-email" ? "Verifying..." : mode === "reset-confirm" ? "Resetting password..." : "Sending...";
     try {
-      const data = await api("/v1/auth/" + (mode === "register" ? "register" : "login"), {method: "POST", body: JSON.stringify({email, password})});
-      csrf = data.csrf_token;
-      $("password").value = "";
-      account(data.user);
+      if (mode === "register") {
+        await api("/v1/auth/register", {method:"POST",body:JSON.stringify({email,password})});
+        $("password").value = "";
+        showPending("CHECK THE TEST INBOX","If the account can be registered, a verification link has been sent to the configured test inbox.",email);
+      } else if (mode === "login") {
+        const data = await api("/v1/auth/login", {method:"POST",body:JSON.stringify({email,password})});
+        csrf = data.csrf_token; $("password").value=""; account(data.user);
+      } else if (mode === "verify-email") {
+        const data = await api("/v1/auth/verify-email", {method:"POST",body:JSON.stringify({token:actionToken})});
+        actionToken = ""; csrf = data.csrf_token; account(data.user);
+      } else if (mode === "reset-request") {
+        await api("/v1/auth/password-reset", {method:"POST",body:JSON.stringify({email})});
+        showPending("CHECK THE TEST INBOX","If the account is eligible, a password reset link has been sent to the configured test inbox.");
+      } else if (mode === "reset-confirm") {
+        await api("/v1/auth/password-reset/confirm", {method:"POST",body:JSON.stringify({token:actionToken,password})});
+        actionToken=""; $("password").value=""; $("form").hidden=false; $("pending").hidden=true; setMode("login"); $("email").value=email;
+        $("status").textContent="Password reset. Sign in with your new password.";
+      }
     } catch (error) { $("error").textContent = error.message; }
-    finally { button.disabled = false; button.textContent = mode === "register" ? "Create account" : "Sign in"; }
+    finally {button.disabled=false;button.removeAttribute("aria-busy");button.textContent=idleLabel;}
+  });
+  $("resend-verification").addEventListener("click", async () => {
+    const button = $("resend-verification"); button.disabled=true; button.setAttribute("aria-busy","true");
+    try {await api("/v1/auth/verification-email",{method:"POST",body:JSON.stringify({email:pendingEmail})});$("pending-status").textContent="If the account needs verification, a new link has been sent.";}
+    catch (error) {$("pending-status").textContent=error.message;}
+    finally {button.disabled=false;button.removeAttribute("aria-busy");}
   });
   $("signout").addEventListener("click", async () => {
-    $("signout").disabled = true;
-    try {
-      await api("/v1/auth/session", {method: "DELETE"});
-      csrf = "";
-      $("account").hidden = true;
-      $("auth-form").hidden = false;
-      $("email").value = "";
-      $("password").value = "";
-      setMode("login");
-      $("email").focus();
-    } catch (error) { $("signout-error").textContent = error.message; }
-    finally { $("signout").disabled = false; }
+    const button=$("signout");button.disabled=true;button.setAttribute("aria-busy","true");
+    try {await api("/v1/auth/session",{method:"DELETE"});csrf="";$("account").hidden=true;$("auth-form").hidden=false;$("form").hidden=false;$("email").value="";$("password").value="";setMode("login");$("email").focus();}
+    catch (error) {$("signout-error").textContent=error.message;}
+    finally {button.disabled=false;button.removeAttribute("aria-busy");}
   });
-  api("/v1/auth/me").then(data => { csrf = data.csrf_token; account(data.user); }).catch(error => {
-    if (error.status !== 401) $("error").textContent = error.message;
-  });
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const action = params.get("action"), token = params.get("token");
+  if (action === "verify-email" || action === "reset-password") {
+    actionToken = token || "";
+    history.replaceState({}, "", window.location.pathname);
+    setMode(action === "verify-email" ? "verify-email" : "reset-confirm");
+    if (!actionToken) $("error").textContent="This link is invalid or expired. Request a new email link.";
+  } else {
+    api("/v1/auth/me").then(data => {csrf=data.csrf_token;account(data.user);}).catch(error => {if(error.status!==401)$("error").textContent=error.message;});
+  }
 })();`;

@@ -11,7 +11,7 @@ There are four credentials:
 - Session token: an opaque value returned once when a session is created and passed to the validation endpoint body.
 - Demo-user browser session: an HTTP-only cookie created through hosted registration or sign-in.
 
-The prototype does not support public onboarding, email verification, password reset, social login, MFA, or user roles. Registration accepts only approved `@authforge.demo` addresses.
+Registration accepts only approved `@authforge.demo` labels. Verification and reset links are sent to one configured, SES-verified evaluation inbox; the flow proves access to that inbox, not ownership of the synthetic alias. There is no public onboarding, social login, MFA, or user roles.
 
 ## Error model
 
@@ -60,8 +60,12 @@ Missing or invalid proof returns `403 invalid_csrf`. `GET` routes still enforce 
 
 | Method and path | Auth | Contract |
 | --- | --- | --- |
-| `POST /v1/auth/register` | none | `{email,password}`. Accepts an unused approved `@authforge.demo` email and a password of at least 12 characters. Creates a user and browser session atomically; duplicate email returns `409 conflict`; returns `{user:{id,email},csrf_token}` with `Cache-Control: no-store`. |
-| `POST /v1/auth/login` | none | `{email,password}`. Returns the same `401 invalid_user_credentials` failure for unknown users and incorrect passwords. Successful requests create a browser session and return `{user:{id,email},csrf_token}` with `Cache-Control: no-store`. |
+| `POST /v1/auth/register` | exact trusted Origin | `{email,password}`. Creates a pending user and one-hour verification action for an approved `@authforge.demo` label. Returns the same `202` generic message for new and duplicate addresses. Sends the link only to the configured test inbox. |
+| `POST /v1/auth/verification-email` | exact trusted Origin | `{email}`. Invalidates prior active verification links and sends a replacement when the account is pending. Always returns generic `202`. |
+| `POST /v1/auth/verify-email` | exact trusted Origin | `{token}`. Consumes a valid one-hour link once, marks the account verified, creates a browser session, and returns `{user:{id,email},csrf_token}` with an HTTP-only cookie. |
+| `POST /v1/auth/login` | exact trusted Origin | `{email,password}`. Requires a verified account. Unknown, unverified, and incorrect-password cases share `401 invalid_user_credentials`. Successful requests create a browser session and return `{user:{id,email},csrf_token}` with `Cache-Control: no-store`. |
+| `POST /v1/auth/password-reset` | exact trusted Origin | `{email}`. Invalidates previous active reset links and sends a 15-minute link only for an eligible account. Always returns generic `202`. |
+| `POST /v1/auth/password-reset/confirm` | exact trusted Origin | `{token,password}`. Consumes a valid reset link once, stores a new Argon2id hash, revokes all browser sessions for the account, and returns `204`. |
 | `GET /v1/auth/me` | user cookie | Returns `{user:{id,email},csrf_token}` for the current active browser session; `401 invalid_user_credentials` otherwise. This restores sign-out proof after reload and uses `Cache-Control: no-store`. |
 | `DELETE /v1/auth/session` | user cookie + CSRF | Revokes the current browser session, clears the cookie, and returns `204`. |
 
@@ -98,11 +102,11 @@ The `/v1` contract is stable for the showcase implementation and tests, but ther
 
 ## Local-demo implementation details
 
-- “Approved” means an address matching the synthetic `@authforge.demo` domain; no external email or public identity is verified.
-- Hosted registration and login require the exact configured Origin. All hosted cookie mutations require Origin and CSRF. Bad proof returns `403 invalid_csrf`.
+- “Approved” means a synthetic label matching `@authforge.demo`; the configured test inbox is the sole SES destination. Verification proves access to that inbox, not ownership of the alias. Verification links expire in one hour; reset links expire in 15 minutes; both are one-time keyed-digest records.
+- Hosted authentication mutations require the exact configured Origin. Cookie-authenticated session deletion also requires the CSRF token. Bad proof returns `403 invalid_csrf`.
 - Hosted authentication attempts are bounded per client using Redis. Registration and login share an attempt window, including successes; this also bounds password-hashing work. Console failures use a separate counter.
 - Browser sessions expire after one hour; console sessions after 15 minutes. Application sessions default to 15 minutes with a configured maximum of one hour.
-- User/session capacity checks and registration writes occur atomically. API-key capacity counts all keys retained for the demo; session capacity counts active sessions only.
+- User/session capacity checks and pending registration writes occur atomically. Duplicate registrations do not disclose account state. API-key capacity counts all keys retained for the demo; session capacity counts active sessions only.
 - Every response is `no-store`, including errors. Malformed JSON and oversized bodies return `400 invalid_request` in the stable error envelope. Unknown routes return `404 not_found` in that envelope.
 - Sessions use opaque tokens only. There is no JWT/JWKS or refresh endpoint.
 - Redis validation hints contain only session IDs under credential digests and expire within 30 seconds. Every validation still checks PostgreSQL; cache loss or stale hints cannot grant access.

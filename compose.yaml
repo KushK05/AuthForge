@@ -73,7 +73,15 @@ services:
       CREDENTIAL_HASH_KEY: ${CREDENTIAL_HASH_KEY:-local-showcase-credential-hash-key-32}
       CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://127.0.0.1:8080}
       SECURE_COOKIES: "false"
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_SES_ENDPOINT_URL: http://localstack:4566
+      AUTH_EMAIL_FROM_EMAIL: ${AUTH_EMAIL_FROM_EMAIL:-sender@authforge.demo}
+      AUTH_EMAIL_TEST_RECIPIENT: ${AUTH_EMAIL_TEST_RECIPIENT:-learner@authforge.demo}
     depends_on:
+      localstack:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:

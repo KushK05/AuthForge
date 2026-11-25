@@ -4,7 +4,7 @@
 
 The active classroom stack exposes HTTP port 8080 only to the supplied teacher/demo public IPv4 CIDR; `0.0.0.0/0` is rejected. It is a short-lived classroom demonstration, not a public production endpoint. EC2 runs the API, direct-outbox worker, and disposable Redis container. RDS is not publicly accessible and accepts PostgreSQL only from the EC2 security group.
 
-Generated database, console, and digest secrets exist only in ignored local Terraform state and EC2 user data/environment files during the demonstration. S3 blocks public access and uses server-side encryption. The EC2 role is limited to classroom bucket objects, the classroom CloudWatch log group, the fixed SES sender, and simulator recipient. No real recipient is permitted.
+Generated database, console, and digest secrets exist only in ignored local Terraform state and EC2 user data/environment files during the demonstration. S3 blocks public access and uses server-side encryption. The EC2 role is limited to classroom bucket objects, the classroom CloudWatch log group, the fixed SES sender, the simulator recipient, and one explicitly configured SES-verified test inbox. No arbitrary recipient is permitted.
 
 The classroom URL uses restricted HTTP because the five-service limit excludes ACM, Route 53, CloudFront, and ALB. Never widen ingress, enter real data, or present this endpoint as production-ready. Destroy it immediately after the teacher demonstration.
 
@@ -12,7 +12,7 @@ The classroom URL uses restricted HTTP because the five-service limit excludes A
 
 AuthForge is a short-lived AWS showcase and must never be presented as a public production identity service. Only synthetic demonstration identifiers and approved `@authforge.demo` accounts may enter the system.
 
-Do not collect names, real email addresses, phone numbers, payment data, production API keys, customer identifiers, or other personal or business data. Approved demo email and password records are temporary RDS data only; passwords are Argon2id hashes. No user identity data reaches Redis, S3, SQS, SES, CloudWatch, logs, metrics, or traces.
+Do not collect names, real email addresses, phone numbers, payment data, production API keys, customer identifiers, or other personal or business data. Approved demo email and password records are temporary RDS data only; passwords are Argon2id hashes. No user identity data reaches Redis, S3, SQS, CloudWatch, logs, metrics, or traces. SES receives only a fixed configured test inbox and synthetic one-time action links; this verifies access to the inbox, not ownership of the fake `@authforge.demo` address.
 
 ## Threat controls
 
@@ -37,20 +37,20 @@ Do not collect names, real email addresses, phone numbers, payment data, product
 - Use a Secrets Manager value as the keyed hashing input for credential digests.
 - Compare digests with timing-safe primitives.
 - Return raw API keys and session tokens only once with `Cache-Control: no-store`.
-- Never put raw credentials, subjects, access codes, or secret-bearing bodies in SQS, S3, SES, logs, metrics, or traces.
+- Never put raw API keys, session tokens, passwords, subjects, or access codes in SQS, S3, logs, metrics, or traces. SES account-action messages may contain only the one-time verification/reset link sent to the configured test inbox; lifecycle messages remain on the mailbox simulator.
 - Revoking an API key revokes its sessions in the same PostgreSQL transaction.
 
 ## AWS security baseline
 
 CloudFront, the public ALB, and WAF form the public edge. API and worker tasks, RDS, and ElastiCache run in private subnets. RDS and Redis have no public ingress. Security groups permit only the explicit API-to-data and worker-to-service paths.
 
-Use separate least-privilege ECS task roles. The API role may access the database secret, Redis, and required KMS operations but does not send SES mail or write S3 artifacts. The worker role consumes SQS, writes the dedicated S3 prefix, invokes SES sandbox, and emits CloudWatch telemetry.
+Use separate least-privilege ECS task roles. The API role may access the database secret, Redis, required KMS operations, and SES `SendEmail` constrained to the configured sender and test recipient; it does not write S3 artifacts. The worker role consumes SQS, writes the dedicated S3 prefix, invokes SES sandbox, and emits CloudWatch telemetry.
 
 KMS encrypts Secrets Manager values, RDS storage, Redis where supported, SQS, S3, and CloudWatch log groups. S3 blocks public access and requires TLS. CloudTrail remains an AWS account control but is not an AuthForge application data store.
 
 ## SES and synthetic data
 
-SES remains in sandbox or mailbox-simulator mode. Do not verify or send to a real recipient for this showcase. Any message uses fixed synthetic content and contains no raw key, token, subject, or access code.
+Lifecycle-event email remains in sandbox/mailbox-simulator mode. Registration verification and password-reset email are the explicitly approved exception: SES may send only to the single configured, SES-verified test inbox. The `@authforge.demo` address is a synthetic account label and is never the SES destination. The link places a cryptographically random one-time token in the URL fragment, so browsers do not send it in the initial HTTP request; its keyed digest alone is stored in PostgreSQL; verification expires after one hour and reset after 15 minutes. Reset revokes existing browser sessions. Never log tokens, full links, passwords, or message bodies. Keep SES sandbox enabled and never configure production access or arbitrary recipients.
 
 ## Logging and retention
 
@@ -68,7 +68,7 @@ Set CloudWatch and S3 retention to the shortest period accepted by the evaluatio
 
 ## Local demonstration safeguards
 
-Local Compose binds published ports to loopback and sends SQS, S3, and SES requests to LocalStack with dummy credentials. No AWS account or paid LocalStack features are needed. Hosted registration and sign-in require the trusted Origin and share a Redis-backed attempt limit. SES recipients are restricted in configuration and the worker to the AWS mailbox simulator allowlist.
+Local Compose binds published ports to loopback and sends SQS, S3, and SES requests to LocalStack with dummy credentials. No AWS account or paid LocalStack features are needed. Hosted auth mutations require the trusted Origin and share a Redis-backed attempt limit. LocalStack captures account-action email; the API sends it only to the configured test inbox in a classroom deployment. SES IAM conditions constrain sender and recipient, and the worker remains restricted to the AWS mailbox simulator allowlist.
 
 `TRUST_PROXY` defaults to false locally. When enabled it trusts exactly two hops (ALB and CloudFront), never the entire forwarded chain. The viewer IP is the second address from the right in `X-Forwarded-For`; caller-supplied prefixes cannot change its rate-limit bucket. This requires the documented origin-header-protected ALB path, no shorter public route to the API, and ALB append mode. Verify forwarded client addresses during any future AWS smoke test; reassess this setting before changing the proxy topology.
 

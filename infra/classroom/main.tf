@@ -202,7 +202,7 @@ data "aws_iam_policy_document" "app" {
     condition {
       test     = "ForAllValues:StringEquals"
       variable = "ses:Recipients"
-      values   = [var.ses_simulator_email]
+      values   = [var.ses_simulator_email, var.auth_email_test_recipient]
     }
   }
 }
@@ -225,7 +225,7 @@ resource "aws_instance" "app" {
     bucket     = aws_s3_bucket.showcase.bucket
     source_key = aws_s3_object.source.key
     log_group  = aws_cloudwatch_log_group.app.name
-    api_env    = base64encode("${local.common_env}REDIS_URL=redis://127.0.0.1:6379\nHOST=0.0.0.0\nPORT=8080\nCONSOLE_ORIGIN=http://${aws_eip.app.public_ip}:8080\nCONSOLE_ACCESS_CODE=${random_password.console.result}\nCREDENTIAL_HASH_KEY=${random_password.digest.result}\nSECURE_COOKIES=false\nTRUST_PROXY=false\n")
+    api_env    = base64encode("${local.common_env}REDIS_URL=redis://127.0.0.1:6379\nHOST=0.0.0.0\nPORT=8080\nCONSOLE_ORIGIN=http://${aws_eip.app.public_ip}:8080\nCONSOLE_ACCESS_CODE=${random_password.console.result}\nCREDENTIAL_HASH_KEY=${random_password.digest.result}\nAUTH_EMAIL_FROM_EMAIL=${var.ses_from_email}\nAUTH_EMAIL_TEST_RECIPIENT=${var.auth_email_test_recipient}\nSECURE_COOKIES=false\nTRUST_PROXY=false\n")
     worker_env = base64encode("${local.common_env}CLASSROOM_DIRECT_EVENTS=true\nSHOWCASE_S3_BUCKET=${aws_s3_bucket.showcase.bucket}\nSHOWCASE_SES_FROM_EMAIL=${var.ses_from_email}\nSHOWCASE_SES_SIMULATOR_EMAIL=${var.ses_simulator_email}\n")
   })
   depends_on = [aws_s3_object.source, aws_iam_role_policy.app]

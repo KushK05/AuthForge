@@ -4,7 +4,7 @@ This is an append-only log. Status values: `accepted`, `superseded`, `proposed`,
 
 ## Active decision
 
-ADR-011 is the active classroom deployment scope. It retains the AuthForge demo behavior from ADR-010 while replacing the larger evaluation deployment for the teacher showcase.
+ADR-011 defines the active classroom deployment scope. ADR-012 adds the approved one-inbox verification and password-reset exception to ADR-010; it retains the temporary synthetic-data boundary.
 
 ## ADR-011: Five-service classroom deployment
 
@@ -108,6 +108,18 @@ ADR-011 is the active classroom deployment scope. It retains the AuthForge demo 
 - Consequences: Evaluators can exercise a complete sign-up and sign-in flow without customer data, public onboarding, email delivery, or retention after teardown.
 - Migration and rollback: The forward-only schema is disposable. Rollback destroys and recreates the temporary stack.
 - Verification: Unit tests cover password and user-session rules; contract and browser tests cover registration, sign-in, sign-out, CSRF, and generic invalid-credential responses.
+
+## ADR-012: One-inbox email verification and password reset
+
+- Status: accepted
+- Date: 2026-10-26
+- Relationship: Supersedes ADR-010 only where it excludes verification and password reset email.
+- Context: The hosted account journey needs usable email verification and password recovery while retaining synthetic `@authforge.demo` account labels and a short-lived classroom deployment. The operator approved delivery to a verified test inbox.
+- Decision: Send registration verification and password-reset links only to one exact, operator-configured, SES-verified test inbox. Never send to the supplied synthetic address. This proves access to the test inbox, not ownership of the synthetic alias. Keep SES in sandbox, constrain IAM to the configured sender and recipient, put tokens in URL fragments, store only keyed token digests, expire verification links after one hour and reset links after 15 minutes, consume them once, and revoke browser sessions after reset. Local development captures messages in LocalStack.
+- Alternatives: Keeping only simulator email leaves the flow unusable. Sending to user-entered addresses or requesting SES production access violates the demo boundary. A new queue or deployable service is unnecessary for this one-off link delivery.
+- Consequences: The database tracks pending/verified state and one-time actions. The API needs narrowly scoped SES permission and one inbox value in ignored deployment configuration. No arbitrary recipient, real user directory, production onboarding, or post-teardown retention is introduced.
+- Migration and rollback: Add `email_verified_at` and `showcase_user_email_actions` through forward migration 0015. The classroom environment remains disposable; rollback destroys and recreates it.
+- Verification: Contract tests cover digest-backed single use, expiry, resend invalidation, generic responses, Argon2id reset, session revocation, fixed recipient, and log redaction. LocalStack/browser journeys cover the user flow; SES identity checks run before a future AWS plan.
 
 ## ADR template
 

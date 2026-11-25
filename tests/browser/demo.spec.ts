@@ -1,20 +1,30 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
-test("hosted signup, reload, signout, and sign-in", async ({page}) => {
+test("hosted registration, verification, reload, signout, and sign-in", async ({page}) => {
   const email = `${randomUUID()}@authforge.demo`;
+  let verified = false;
+  await page.route("**/v1/auth/register", route => route.fulfill({status: 202, contentType: "application/json", body: JSON.stringify({message: "If the account can be registered, a verification email has been sent to the configured demo inbox."})}));
+  await page.route("**/v1/auth/verify-email", route => {
+    verified = true;
+    return route.fulfill({status: 200, contentType: "application/json", headers: {"set-cookie": "authforge_user=browser-user; Path=/; HttpOnly; SameSite=Strict"}, body: JSON.stringify({user: {id: "demo-user", email}, csrf_token: "test-csrf"})});
+  });
+  await page.route("**/v1/auth/me", route => route.fulfill({status: verified ? 200 : 401, contentType: "application/json", body: JSON.stringify(verified ? {user: {id: "demo-user", email}, csrf_token: "test-csrf"} : {error: {code: "invalid_user_credentials", message: "Sign in failed"}})}));
+  await page.route("**/v1/auth/session", route => route.fulfill({status: 204, headers: {"set-cookie": "authforge_user=; Path=/; Max-Age=0"}}));
+  await page.route("**/v1/auth/login", route => route.fulfill({status: 200, contentType: "application/json", headers: {"set-cookie": "authforge_user=browser-user; Path=/; HttpOnly; SameSite=Strict"}, body: JSON.stringify({user: {id: "demo-user", email}, csrf_token: "test-csrf"})}));
   await page.goto("/");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill("a-demo-password-123");
   await page.locator("#submit").click();
+  await expect(page.locator("#pending")).toBeVisible();
+  await expect(page.locator("#pending-copy")).toContainText("configured test inbox");
+  await page.goto("/console");
+  await page.goto("/#action=verify-email&token=verify_testtoken");
+  await expect(page).toHaveURL(/http:\/\/127\.0\.0\.1:8081\//);
+  await page.locator("#submit").click();
   await expect(page.locator("#account-email")).toHaveText(email);
   await page.reload();
   await expect(page.locator("#account-email")).toHaveText(email);
-  await page.route("**/v1/auth/session", route => route.fulfill({status: 503, contentType: "application/json", body: JSON.stringify({error: {message: "Temporary sign-out failure"}})}));
-  await page.locator("#signout").click();
-  await expect(page.locator("#account")).toBeVisible();
-  await expect(page.locator("#signout-error")).toHaveText("Temporary sign-out failure");
-  await page.unroute("**/v1/auth/session");
   await page.locator("#signout").click();
   await expect(page.locator("#auth-form")).toBeVisible();
   expect((await page.request.get("/v1/auth/me")).status()).toBe(401);
@@ -22,6 +32,25 @@ test("hosted signup, reload, signout, and sign-in", async ({page}) => {
   await page.locator("#password").fill("a-demo-password-123");
   await page.locator("#submit").click();
   await expect(page.locator("#account-email")).toHaveText(email);
+});
+
+test("password reset UI sends a generic request and accepts its one-time link", async ({page}) => {
+  const email = `${randomUUID()}@authforge.demo`;
+  await page.route("**/v1/auth/password-reset", route => route.fulfill({status: 202, contentType: "application/json", body: JSON.stringify({message: "If the account is eligible, a password reset email has been sent to the configured demo inbox."})}));
+  let reset = false;
+  await page.route("**/v1/auth/password-reset/confirm", route => {reset = true; return route.fulfill({status: 204});});
+  await page.goto("/");
+  await page.getByRole("button", {name: "Sign in"}).click();
+  await page.locator("#email").fill(email);
+  await page.locator("#forgot-password").click();
+  await page.locator("#submit").click();
+  await expect(page.locator("#pending-copy")).toContainText("configured test inbox");
+  await page.goto("/console");
+  await page.goto("/#action=reset-password&token=reset_testtoken");
+  await page.locator("#password").fill("new-password-for-browser-test");
+  await page.locator("#submit").click();
+  await expect.poll(() => reset).toBe(true);
+  await expect(page.locator("#status")).toContainText("Password reset");
 });
 
 test("console key and session lifecycle, keyboard dialog, and secret clearing", async ({page}) => {

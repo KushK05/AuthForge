@@ -10,12 +10,13 @@ mock_provider "aws" {
 mock_provider "random" {}
 
 variables {
-  aws_region       = "us-east-1"
-  allowed_cidr     = "198.51.100.4/32"
-  ses_from_email   = "classroom@school.example"
-  evaluation_owner = "operator-class-demo"
-  teardown_at      = "2026-10-27T06:00:00Z"
-  source_sha       = "0123456789abcdef0123456789abcdef01234567"
+  aws_region                = "us-east-1"
+  allowed_cidr              = "198.51.100.4/32"
+  ses_from_email            = "classroom@school.example"
+  auth_email_test_recipient = "test-inbox@school.example"
+  evaluation_owner          = "operator-class-demo"
+  teardown_at               = "2026-10-27T06:00:00Z"
+  source_sha                = "0123456789abcdef0123456789abcdef01234567"
 }
 
 run "minimal_disposable_classroom_stack" {

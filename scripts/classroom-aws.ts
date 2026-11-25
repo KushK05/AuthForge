@@ -16,7 +16,9 @@ const profile = (): string[] => ["--profile", required("AWS_PROFILE"), "--no-cli
 
 export const validateClassroomVariables = (content: string, sha: string, now = new Date()): void => {
   if (!content.includes(`source_sha = "${sha}"`)) throw new Error("source_sha must equal the current full commit SHA");
-  if (/203\.0\.113\.10\/32|verified-demo@example\.com|0123456789abcdef/.test(content)) throw new Error("Replace all classroom example values");
+  const recipient = content.match(/^auth_email_test_recipient\s*=\s*"([^"]+)"/m)?.[1];
+  if (!recipient || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipient) || recipient.toLowerCase().endsWith("@authforge.demo")) throw new Error("Configure one real SES-verified auth_email_test_recipient inbox");
+  if (/203\.0\.113\.10\/32|verified-demo@example\.com|test-inbox@example\.com|0123456789abcdef/.test(content)) throw new Error("Replace all classroom example values");
   if (/allowed_cidr\s*=\s*"(?:0\.0\.0\.0\/0|::\/0)"/.test(content)) throw new Error("Public ingress is forbidden");
   const deadline = content.match(/^teardown_at\s*=\s*"([^"]+)"/m)?.[1];
   const remaining = deadline ? new Date(deadline).getTime() - now.getTime() : Number.NaN;
@@ -49,18 +51,21 @@ const approval = (word: "DEPLOY" | "DESTROY"): void => {
 };
 const output = (name: string): string => capture("terraform", [...terraform, "output", "-raw", name]);
 
-const verifySesSender = (): void => {
+const verifySesIdentities = (): void => {
   const vars = readFileSync(`${root}/infra/classroom/${tfvars}`, "utf8");
   const region = vars.match(/^aws_region\s*=\s*"([^"]+)"/m)?.[1];
   const sender = vars.match(/^ses_from_email\s*=\s*"([^"]+)"/m)?.[1];
-  if (!region || !sender) throw new Error("aws_region and ses_from_email are required");
-  const verified = capture("aws", ["sesv2", "get-email-identity", "--email-identity", sender, "--query", "VerifiedForSendingStatus", "--output", "text", "--region", region, ...profile()]);
-  if (verified !== "True") throw new Error("SES sender must already be verified in the selected region");
+  const recipient = vars.match(/^auth_email_test_recipient\s*=\s*"([^"]+)"/m)?.[1];
+  if (!region || !sender || !recipient) throw new Error("aws_region, ses_from_email, and auth_email_test_recipient are required");
+  for (const [label, identity] of [["sender", sender], ["test recipient", recipient]] as const) {
+    const verified = capture("aws", ["sesv2", "get-email-identity", "--email-identity", identity, "--query", "VerifiedForSendingStatus", "--output", "text", "--region", region, ...profile()]);
+    if (verified !== "True") throw new Error(`SES ${label} must already be verified in the selected region`);
+  }
 };
 
 const planDeploy = (): void => {
   preflight();
-  verifySesSender();
+  verifySesIdentities();
   const plan = "classroom-deploy.tfplan";
   show("terraform", [...terraform, "plan", "-input=false", `-var-file=${tfvars}`, `-out=${plan}`]);
   show("terraform", [...terraform, "show", "-no-color", plan]);

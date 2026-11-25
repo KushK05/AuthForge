@@ -21,6 +21,8 @@ const configurationSchema = z.object({
   SHOWCASE_S3_KMS_KEY_ID: optionalString,
   SHOWCASE_SES_FROM_EMAIL: optionalEmail,
   SHOWCASE_SES_SIMULATOR_EMAIL: optionalEmail,
+  AUTH_EMAIL_FROM_EMAIL: optionalEmail,
+  AUTH_EMAIL_TEST_RECIPIENT: optionalEmail,
   CLASSROOM_DIRECT_EVENTS: z.enum(["true", "false"]).default("false"),
   CONSOLE_ACCESS_CODE: z.string().min(16),
   CREDENTIAL_HASH_KEY: z.string().min(32),
@@ -56,6 +58,8 @@ export type AppConfig = Readonly<{
   showcaseS3KmsKeyId?: string;
   showcaseSesFromEmail?: string;
   showcaseSesSimulatorEmail?: string;
+  authEmailFromEmail?: string;
+  authEmailTestRecipient?: string;
   consoleAccessCode: string;
   credentialHashKey: string;
   consoleOrigin: string;
@@ -100,6 +104,9 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
   if (new URL(data.CONSOLE_ORIGIN).origin !== data.CONSOLE_ORIGIN) throw new Error("CONSOLE_ORIGIN must be an exact origin without a path");
   if (data.SHOWCASE_SES_SIMULATOR_EMAIL && !/^(success|bounce|complaint|ooto|suppressionlist)@simulator\.amazonses\.com$/.test(data.SHOWCASE_SES_SIMULATOR_EMAIL)) throw new Error("SES recipient must be an AWS mailbox simulator address");
   if (Boolean(data.SHOWCASE_SES_FROM_EMAIL) !== Boolean(data.SHOWCASE_SES_SIMULATOR_EMAIL)) throw new Error("Configure both SES sender and simulator recipient");
+  if (Boolean(data.AUTH_EMAIL_FROM_EMAIL) !== Boolean(data.AUTH_EMAIL_TEST_RECIPIENT)) throw new Error("Configure both authentication email sender and test recipient");
+  if (data.AUTH_EMAIL_FROM_EMAIL && data.AUTH_EMAIL_TEST_RECIPIENT && data.AUTH_EMAIL_FROM_EMAIL.toLowerCase() === data.AUTH_EMAIL_TEST_RECIPIENT.toLowerCase()) throw new Error("Authentication email sender and test recipient must be different addresses");
+  if ((data.NODE_ENV === "production" || data.NODE_ENV === "staging") && (!data.AUTH_EMAIL_FROM_EMAIL || !data.AUTH_EMAIL_TEST_RECIPIENT)) throw new Error("Deployed environments require an authentication email sender and verified test recipient");
   if (data.SHOWCASE_QUEUE_URL && !data.SHOWCASE_S3_BUCKET) throw new Error("SHOWCASE_S3_BUCKET is required with SHOWCASE_QUEUE_URL");
   return {
     environment: parsed.data.NODE_ENV,
@@ -115,6 +122,8 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     ...(parsed.data.SHOWCASE_S3_KMS_KEY_ID ? { showcaseS3KmsKeyId: parsed.data.SHOWCASE_S3_KMS_KEY_ID } : {}),
     ...(parsed.data.SHOWCASE_SES_FROM_EMAIL ? { showcaseSesFromEmail: parsed.data.SHOWCASE_SES_FROM_EMAIL } : {}),
     ...(parsed.data.SHOWCASE_SES_SIMULATOR_EMAIL ? { showcaseSesSimulatorEmail: parsed.data.SHOWCASE_SES_SIMULATOR_EMAIL } : {}),
+    ...(parsed.data.AUTH_EMAIL_FROM_EMAIL ? { authEmailFromEmail: parsed.data.AUTH_EMAIL_FROM_EMAIL } : {}),
+    ...(parsed.data.AUTH_EMAIL_TEST_RECIPIENT ? { authEmailTestRecipient: parsed.data.AUTH_EMAIL_TEST_RECIPIENT } : {}),
     consoleAccessCode: parsed.data.CONSOLE_ACCESS_CODE,
     credentialHashKey: parsed.data.CREDENTIAL_HASH_KEY,
     consoleOrigin: parsed.data.CONSOLE_ORIGIN,

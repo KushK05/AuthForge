@@ -44,7 +44,7 @@ This is a small modular application, not a microservice system. The API and work
 | --- | --- | --- |
 | `developer-console` | Static console UI, access-code exchange, CSRF, and console session | Developer accounts, organizations, teams, billing |
 | `api-keys` | Create, list, authenticate, and revoke demonstration API keys | Projects, environments, user permissions |
-| `users` | Register and authenticate approved demo users with Argon2id password hashes and short browser sessions | Public onboarding, profiles, email, roles, refresh families |
+| `users` | Register, verify, sign in, and reset passwords for approved demo labels with Argon2id hashes and short browser sessions; sends links to one configured test inbox | Public onboarding, arbitrary recipients, profiles, roles, refresh families |
 | `sessions` | Create, validate, list, expire, and revoke sessions for synthetic subjects or approved demo users | Roles, refresh families |
 | `showcase-events` | Outbox publication, SQS handling, SES simulator call, and redacted S3 artifact | Real notifications, business workflows, durable audit product |
 | `shared` | Configuration, clock, IDs, errors, secret utilities, database and AWS ports | Product workflows |
@@ -53,7 +53,7 @@ Modules communicate through application services and narrow repository interface
 
 ## State ownership
 
-PostgreSQL is authoritative while the temporary environment exists. It stores console sessions, approved demo users and their browser sessions, API-key metadata and digests, application sessions, outbox events, and worker deduplication records.
+PostgreSQL is authoritative while the temporary environment exists. It stores console sessions, approved demo users, one-time action-token digests and their browser sessions, API-key metadata and digests, application sessions, outbox events, and worker deduplication records.
 
 Redis is disposable. It stores console-login rate limits, short-lived credential validation cache, and revocation hints. A Redis loss may reduce performance or force conservative rejection, but it must not grant access or lose authoritative state.
 
@@ -61,13 +61,14 @@ S3 stores only redacted synthetic lifecycle-event artifacts used as evaluation e
 
 ## Transaction and event flow
 
-1. The HTTP boundary validates input, origin, CSRF, and credentials.
-2. The application service applies ownership, expiry, and revocation rules.
-3. One PostgreSQL transaction writes the state change and a minimal outbox event.
-4. A successful response means the temporary PostgreSQL state committed.
-5. The worker publishes pending outbox rows to SQS and marks them published.
-6. The worker consumes SQS events with completion deduplication, emits CloudWatch metrics, writes a redacted S3 artifact, and optionally calls SES using only a sandbox or simulator recipient.
-7. Exhausted event processing enters the DLQ and is visible during evaluation.
+1. Registration and reset requests validate input, trusted Origin, and rate limits; PostgreSQL stores only a keyed action-token digest. SES sends the raw one-time link to the single configured test inbox. Verification/reset atomically consumes the digest; reset also revokes the account’s active browser sessions.
+2. The HTTP boundary validates input, origin, CSRF, and credentials.
+3. The application service applies ownership, expiry, and revocation rules.
+4. One PostgreSQL transaction writes the state change and a minimal outbox event.
+5. A successful response means the temporary PostgreSQL state committed.
+6. The worker publishes pending outbox rows to SQS and marks them published.
+7. The worker consumes SQS events with completion deduplication, emits CloudWatch metrics, writes a redacted S3 artifact, and optionally calls SES using only a sandbox or simulator recipient.
+8. Exhausted event processing enters the DLQ and is visible during evaluation.
 
 Event payloads contain event ID, event type, timestamp, API-key ID, session ID when applicable, and correlation ID. They never contain raw keys, tokens, access codes, subjects, email addresses, or request bodies.
 

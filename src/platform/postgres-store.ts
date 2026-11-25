@@ -9,6 +9,7 @@ import type {
   ApplicationSessionRecord,
   ConsoleSessionRecord,
   DemoUserRecord,
+  DemoUserEmailActionRecord,
   DemoUserSessionRecord,
   ShowcaseStore
 } from "./store.js";
@@ -30,7 +31,8 @@ type ApiKeyRow = Readonly<{
   created_at: Date;
   revoked_at: Date | null;
 }>;
-type UserRow = Readonly<{ id: string; email: string; password_hash: string; created_at: Date; disabled_at: Date | null }>;
+type UserRow = Readonly<{ id: string; email: string; password_hash: string; created_at: Date; email_verified_at: Date | null; disabled_at: Date | null }>;
+type UserEmailActionRow = Readonly<{ id: string; user_id: string; purpose: "verify_email" | "reset_password"; token_digest: Buffer; created_at: Date; expires_at: Date; consumed_at: Date | null }>;
 type UserSessionRow = Readonly<{ id: string; user_id: string; token_digest: Buffer; csrf_digest: Buffer; created_at: Date; expires_at: Date; revoked_at: Date | null }>;
 
 type SessionRow = Readonly<{
@@ -60,7 +62,7 @@ const toApiKey = (row: ApiKeyRow): ApiKeyRecord => ({
   createdAt: row.created_at,
   ...(row.revoked_at ? { revokedAt: row.revoked_at } : {})
 });
-const toUser = (row: UserRow): DemoUserRecord => ({ id: row.id, email: row.email, passwordHash: row.password_hash, createdAt: row.created_at, ...(row.disabled_at ? { disabledAt: row.disabled_at } : {}) });
+const toUser = (row: UserRow): DemoUserRecord => ({ id: row.id, email: row.email, passwordHash: row.password_hash, createdAt: row.created_at, ...(row.email_verified_at ? { emailVerifiedAt: row.email_verified_at } : {}), ...(row.disabled_at ? { disabledAt: row.disabled_at } : {}) });
 const toUserSession = (row: UserSessionRow): DemoUserSessionRecord => ({ id: row.id, userId: row.user_id, tokenDigest: row.token_digest, csrfDigest: row.csrf_digest, createdAt: row.created_at, expiresAt: row.expires_at, ...(row.revoked_at ? { revokedAt: row.revoked_at } : {}) });
 
 const toSession = (row: SessionRow): ApplicationSessionRecord => ({
@@ -119,16 +121,12 @@ export class PostgresShowcaseStore implements ShowcaseStore {
     `;
   }
 
-  public async createUser(record: DemoUserRecord): Promise<boolean> {
-    const result = await this.sql`INSERT INTO showcase_users (id, email, password_hash, created_at) VALUES (${record.id}, ${record.email}, ${record.passwordHash}, ${record.createdAt}) ON CONFLICT (email) DO NOTHING`;
-    return result.count === 1;
-  }
   public async findUserByEmail(email: string): Promise<DemoUserRecord | undefined> {
-    const [row] = await this.sql<UserRow[]>`SELECT id, email, password_hash, created_at, disabled_at FROM showcase_users WHERE email = ${email} AND disabled_at IS NULL LIMIT 1`;
+    const [row] = await this.sql<UserRow[]>`SELECT id, email, password_hash, created_at, email_verified_at, disabled_at FROM showcase_users WHERE email = ${email} AND disabled_at IS NULL LIMIT 1`;
     return row ? toUser(row) : undefined;
   }
   public async findUserById(id: string): Promise<DemoUserRecord | undefined> {
-    const [row] = await this.sql<UserRow[]>`SELECT id, email, password_hash, created_at, disabled_at FROM showcase_users WHERE id = ${id} AND disabled_at IS NULL LIMIT 1`;
+    const [row] = await this.sql<UserRow[]>`SELECT id, email, password_hash, created_at, email_verified_at, disabled_at FROM showcase_users WHERE id = ${id} AND disabled_at IS NULL LIMIT 1`;
     return row ? toUser(row) : undefined;
   }
   public async createUserSession(record: DemoUserSessionRecord, limit = 100): Promise<void> {
@@ -144,6 +142,74 @@ export class PostgresShowcaseStore implements ShowcaseStore {
     return row ? toUserSession(row) : undefined;
   }
   public async revokeUserSession(id: string, now: Date): Promise<void> { await this.sql`UPDATE showcase_user_sessions SET revoked_at = ${now} WHERE id = ${id} AND revoked_at IS NULL`; }
+
+  public async createPendingUser(user: DemoUserRecord, action: DemoUserEmailActionRecord, maxUsers: number): Promise<boolean> {
+    return this.sql.begin(async transaction => {
+      await transaction`SELECT pg_advisory_xact_lock(824031421)`;
+      const [existing] = await transaction`SELECT id FROM showcase_users WHERE email = ${user.email}`;
+      if (existing) return false;
+      const [users] = await transaction<{count: number}[]>`SELECT count(*)::int AS count FROM showcase_users`;
+      if ((users?.count ?? 0) >= maxUsers) throw capacityExceeded();
+      await transaction`INSERT INTO showcase_users (id, email, password_hash, created_at) VALUES (${user.id}, ${user.email}, ${user.passwordHash}, ${user.createdAt})`;
+      await transaction`INSERT INTO showcase_user_email_actions (id, user_id, purpose, token_digest, created_at, expires_at)
+        VALUES (${action.id}, ${action.userId}, ${action.purpose}, ${action.tokenDigest}, ${action.createdAt}, ${action.expiresAt})`;
+      return true;
+    }) as Promise<boolean>;
+  }
+
+  public async createUserEmailAction(action: DemoUserEmailActionRecord): Promise<boolean> {
+    return this.sql.begin(async transaction => {
+      await transaction`SELECT pg_advisory_xact_lock(824031421)`;
+      const rows = action.purpose === "verify_email"
+        ? await transaction<UserRow[]>`SELECT id, email, password_hash, created_at, email_verified_at, disabled_at
+            FROM showcase_users WHERE id = ${action.userId} AND disabled_at IS NULL AND email_verified_at IS NULL FOR UPDATE`
+        : await transaction<UserRow[]>`SELECT id, email, password_hash, created_at, email_verified_at, disabled_at
+            FROM showcase_users WHERE id = ${action.userId} AND disabled_at IS NULL AND email_verified_at IS NOT NULL FOR UPDATE`;
+      const [user] = rows;
+      if (!user) return false;
+      await transaction`UPDATE showcase_user_email_actions SET consumed_at = ${action.createdAt}
+        WHERE user_id = ${action.userId} AND purpose = ${action.purpose} AND consumed_at IS NULL`;
+      await transaction`INSERT INTO showcase_user_email_actions (id, user_id, purpose, token_digest, created_at, expires_at)
+        VALUES (${action.id}, ${action.userId}, ${action.purpose}, ${action.tokenDigest}, ${action.createdAt}, ${action.expiresAt})`;
+      return true;
+    }) as Promise<boolean>;
+  }
+
+  public async verifyUserEmail(tokenDigest: Buffer, now: Date, session: Omit<DemoUserSessionRecord, "userId">, maxSessions: number): Promise<DemoUserRecord | undefined> {
+    return this.sql.begin(async transaction => {
+      await transaction`SELECT pg_advisory_xact_lock(824031421)`;
+      const [action] = await transaction<UserEmailActionRow[]>`SELECT id, user_id, purpose, token_digest, created_at, expires_at, consumed_at
+        FROM showcase_user_email_actions WHERE purpose = 'verify_email' AND token_digest = ${tokenDigest}
+          AND consumed_at IS NULL AND expires_at > ${now} FOR UPDATE`;
+      if (!action) return undefined;
+      const [user] = await transaction<UserRow[]>`SELECT id, email, password_hash, created_at, email_verified_at, disabled_at
+        FROM showcase_users WHERE id = ${action.user_id} AND disabled_at IS NULL FOR UPDATE`;
+      if (!user || user.email_verified_at) return undefined;
+      const [count] = await transaction<{count: number}[]>`SELECT count(*)::int AS count FROM showcase_user_sessions WHERE revoked_at IS NULL AND expires_at > ${now}`;
+      if ((count?.count ?? 0) >= maxSessions) throw capacityExceeded();
+      await transaction`UPDATE showcase_user_email_actions SET consumed_at = ${now} WHERE id = ${action.id}`;
+      await transaction`UPDATE showcase_users SET email_verified_at = ${now} WHERE id = ${user.id}`;
+      await transaction`INSERT INTO showcase_user_sessions (id, user_id, token_digest, csrf_digest, created_at, expires_at)
+        VALUES (${session.id}, ${action.user_id}, ${session.tokenDigest}, ${session.csrfDigest}, ${session.createdAt}, ${session.expiresAt})`;
+      return {...toUser(user), emailVerifiedAt: now};
+    }) as Promise<DemoUserRecord | undefined>;
+  }
+
+  public async resetUserPassword(tokenDigest: Buffer, passwordHash: string, now: Date): Promise<boolean> {
+    return this.sql.begin(async transaction => {
+      await transaction`SELECT pg_advisory_xact_lock(824031421)`;
+      const [action] = await transaction<UserEmailActionRow[]>`SELECT id, user_id, purpose, token_digest, created_at, expires_at, consumed_at
+        FROM showcase_user_email_actions WHERE purpose = 'reset_password' AND token_digest = ${tokenDigest}
+          AND consumed_at IS NULL AND expires_at > ${now} FOR UPDATE`;
+      if (!action) return false;
+      const [user] = await transaction`SELECT id FROM showcase_users WHERE id = ${action.user_id} AND email_verified_at IS NOT NULL AND disabled_at IS NULL FOR UPDATE`;
+      if (!user) return false;
+      await transaction`UPDATE showcase_user_email_actions SET consumed_at = ${now} WHERE id = ${action.id}`;
+      await transaction`UPDATE showcase_users SET password_hash = ${passwordHash} WHERE id = ${action.user_id}`;
+      await transaction`UPDATE showcase_user_sessions SET revoked_at = ${now} WHERE user_id = ${action.user_id} AND revoked_at IS NULL`;
+      return true;
+    }) as Promise<boolean>;
+  }
 
   public async createApiKey(record: ApiKeyRecord, limit = 100): Promise<void> {
     await this.sql.begin(async (transaction) => {
@@ -262,21 +328,6 @@ export class PostgresShowcaseStore implements ShowcaseStore {
         await transaction`INSERT INTO showcase_outbox_events (id, event_type, event_version, payload, created_at)
           VALUES (${randomUUID()}, 'showcase.session.revoked', 1, ${transaction.json({session_id: id, api_key_id: session.api_key_id})}, ${now})`;
       }
-      return true;
-    }) as Promise<boolean>;
-  }
-
-  public async createUserAndSession(user: DemoUserRecord, session: DemoUserSessionRecord, maxUsers: number, maxSessions: number): Promise<boolean> {
-    return this.sql.begin(async transaction => {
-      await transaction`SELECT pg_advisory_xact_lock(824031421)`;
-      const [existing] = await transaction`SELECT id FROM showcase_users WHERE email = ${user.email}`;
-      if (existing) return false;
-      const [users] = await transaction<{count: number}[]>`SELECT count(*)::int AS count FROM showcase_users`;
-      const [sessions] = await transaction<{count: number}[]>`SELECT count(*)::int AS count FROM showcase_user_sessions WHERE revoked_at IS NULL AND expires_at > now()`;
-      if ((users?.count ?? 0) >= maxUsers || (sessions?.count ?? 0) >= maxSessions) throw capacityExceeded();
-      await transaction`INSERT INTO showcase_users (id, email, password_hash, created_at) VALUES (${user.id}, ${user.email}, ${user.passwordHash}, ${user.createdAt})`;
-      await transaction`INSERT INTO showcase_user_sessions (id, user_id, token_digest, csrf_digest, created_at, expires_at)
-        VALUES (${session.id}, ${session.userId}, ${session.tokenDigest}, ${session.csrfDigest}, ${session.createdAt}, ${session.expiresAt})`;
       return true;
     }) as Promise<boolean>;
   }

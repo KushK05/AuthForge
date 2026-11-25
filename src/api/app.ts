@@ -19,6 +19,7 @@ import { ApiKeyService } from "../modules/api-keys/api-key-service.js";
 import { ConsoleService } from "../modules/developer-console/console-service.js";
 import { type IssuedSession, SessionService } from "../modules/sessions/session-service.js";
 import { UserService } from "../modules/users/user-service.js";
+import { SesAuthEmailSender, type AuthEmailSender } from "../modules/users/auth-email-service.js";
 import { authClient, authPage } from "./auth-page.js";
 import { dashboardClient, dashboardPage } from "./dashboard-page.js";
 import { type ConsoleRateLimiter, MemoryConsoleRateLimiter } from "../platform/redis.js";
@@ -65,7 +66,8 @@ export const buildApi = (
   store: ShowcaseStore,
   rateLimiter: ConsoleRateLimiter = new MemoryConsoleRateLimiter(),
   logger = new Logger(config.logLevel, config.environment),
-  validationHints: ValidationHints = noValidationHints
+  validationHints: ValidationHints = noValidationHints,
+  authEmailSender: AuthEmailSender = new SesAuthEmailSender(config)
 ): FastifyInstance => {
   // AWS has exactly two trusted hops: ALB and CloudFront. Never trust the
   // viewer-supplied prefix of X-Forwarded-For.
@@ -73,7 +75,7 @@ export const buildApi = (
   const consoleService = new ConsoleService(config, store, rateLimiter);
   const apiKeyService = new ApiKeyService(config, store);
   const sessionService = new SessionService(config, store);
-  const userService = new UserService(config, store);
+  const userService = new UserService(config, store, authEmailSender);
 
   api.addHook("onRequest", async (request, reply) => {
     const supplied = request.headers["x-request-id"];
@@ -83,6 +85,7 @@ export const buildApi = (
     reply.header("X-Request-Id", request.requestId);
     reply.header("Cache-Control", "no-store");
     reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Referrer-Policy", "no-referrer");
   });
 
   api.addHook("onResponse", async (request, reply) => {
@@ -175,9 +178,26 @@ export const buildApi = (
     await throttleUserAuth(request);
     const body = z.object({ email: z.string().max(254), password: z.string().max(256) }).strict().safeParse(request.body);
     if (!body.success) throw invalidRequest("Invalid registration request");
-    const issued = await userService.register(body.data.email, body.data.password);
-    reply.header("Set-Cookie", userCookie(issued.token, 3600)); reply.header("Cache-Control", "no-store");
-    return reply.status(201).send({ user: { id: issued.user.id, email: issued.user.email }, csrf_token: issued.csrfToken });
+    await userService.register(body.data.email, body.data.password);
+    reply.header("Cache-Control", "no-store");
+    return reply.status(202).send({message: "If the account can be registered, a verification email has been sent to the configured demo inbox."});
+  });
+  api.post("/v1/auth/verification-email", async (request, reply) => {
+    await throttleUserAuth(request);
+    const body = z.object({email: z.string().max(254)}).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid verification email request");
+    await userService.resendVerification(body.data.email);
+    reply.header("Cache-Control", "no-store");
+    return reply.status(202).send({message: "If the account needs verification, a message has been sent to the configured demo inbox."});
+  });
+  api.post("/v1/auth/verify-email", async (request, reply) => {
+    await throttleUserAuth(request);
+    const body = z.object({token: z.string().min(1).max(128)}).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid email verification request");
+    const issued = await userService.verifyEmail(body.data.token);
+    reply.header("Set-Cookie", userCookie(issued.token, 3600));
+    reply.header("Cache-Control", "no-store");
+    return reply.send({user: {id: issued.user.id, email: issued.user.email}, csrf_token: issued.csrfToken});
   });
   api.post("/v1/auth/login", async (request, reply) => {
     await throttleUserAuth(request);
@@ -186,6 +206,21 @@ export const buildApi = (
     const issued = await userService.login(body.data.email, body.data.password);
     reply.header("Set-Cookie", userCookie(issued.token, 3600)); reply.header("Cache-Control", "no-store");
     return reply.send({ user: { id: issued.user.id, email: issued.user.email }, csrf_token: issued.csrfToken });
+  });
+  api.post("/v1/auth/password-reset", async (request, reply) => {
+    await throttleUserAuth(request);
+    const body = z.object({email: z.string().max(254)}).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid password reset request");
+    await userService.requestPasswordReset(body.data.email);
+    reply.header("Cache-Control", "no-store");
+    return reply.status(202).send({message: "If the account is eligible, a password reset email has been sent to the configured demo inbox."});
+  });
+  api.post("/v1/auth/password-reset/confirm", async (request, reply) => {
+    await throttleUserAuth(request);
+    const body = z.object({token: z.string().min(1).max(128), password: z.string().min(12).max(256)}).strict().safeParse(request.body);
+    if (!body.success) throw invalidRequest("Invalid password reset confirmation");
+    await userService.resetPassword(body.data.token, body.data.password);
+    return reply.status(204).send();
   });
   api.get("/v1/auth/me", async (request) => {
     const origin = getOrigin(request);

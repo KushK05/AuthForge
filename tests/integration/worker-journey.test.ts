@@ -11,12 +11,12 @@ import { PostgresShowcaseOutbox, ShowcaseOutboxWorker } from "../../src/modules/
 
 const enabled = process.env.AUTHFORGE_LOCAL_INTEGRATION === "true";
 describe.skipIf(!enabled)("local SQS, S3, SES and DLQ journey", () => {
-  const endpoint = "http://127.0.0.1:54566";
+  const endpoint = process.env.AUTHFORGE_TEST_LOCALSTACK_URL ?? "http://127.0.0.1:54566";
   const credentials = {accessKeyId: "test", secretAccessKey: "test"};
   const sqs = new SQSClient({region: "us-east-1", endpoint, credentials});
   const s3 = new S3Client({region: "us-east-1", endpoint, credentials, forcePathStyle: true});
-  const sql = postgres("postgres://authforge:authforge@127.0.0.1:55432/authforge", {max: 1, onnotice: () => {}});
-  const config = loadWorkerConfig({NODE_ENV: "test", DATABASE_URL: "postgres://authforge:authforge@127.0.0.1:55432/authforge", AWS_SQS_ENDPOINT_URL: endpoint, AWS_S3_ENDPOINT_URL: endpoint, AWS_SES_ENDPOINT_URL: endpoint, SHOWCASE_S3_BUCKET: "authforge-events", SHOWCASE_SES_FROM_EMAIL: "sender@authforge.demo", SHOWCASE_SES_SIMULATOR_EMAIL: "success@simulator.amazonses.com"});
+  const sql = postgres(process.env.AUTHFORGE_TEST_DATABASE_URL ?? "postgres://authforge:authforge@127.0.0.1:55432/authforge", {max: 1, onnotice: () => {}});
+  const config = loadWorkerConfig({NODE_ENV: "test", DATABASE_URL: process.env.AUTHFORGE_TEST_DATABASE_URL ?? "postgres://authforge:authforge@127.0.0.1:55432/authforge", AWS_SQS_ENDPOINT_URL: endpoint, AWS_S3_ENDPOINT_URL: endpoint, AWS_SES_ENDPOINT_URL: endpoint, SHOWCASE_S3_BUCKET: "authforge-events", SHOWCASE_SES_FROM_EMAIL: "sender@authforge.demo", SHOWCASE_SES_SIMULATOR_EMAIL: "success@simulator.amazonses.com"});
   let queueUrl: string, dlqUrl: string;
   const logs: string[] = [];
   const logger = {info: (message: string, fields?: Record<string, unknown>) => {logs.push(JSON.stringify({message, ...fields}));}, warn: (message: string, fields?: Record<string, unknown>) => {logs.push(JSON.stringify({message, ...fields}));}, error: () => {}};

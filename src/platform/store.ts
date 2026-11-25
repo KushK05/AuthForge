@@ -21,7 +21,18 @@ export type DemoUserRecord = Readonly<{
   email: string;
   passwordHash: string;
   createdAt: Date;
+  emailVerifiedAt?: Date;
   disabledAt?: Date;
+}>;
+
+export type DemoUserEmailActionRecord = Readonly<{
+  id: string;
+  userId: string;
+  purpose: "verify_email" | "reset_password";
+  tokenDigest: Buffer;
+  createdAt: Date;
+  expiresAt: Date;
+  consumedAt?: Date;
 }>;
 
 export type DemoUserSessionRecord = Readonly<{
@@ -52,12 +63,15 @@ export type ShowcaseStore = Readonly<{
   countConsoleSessions(): Promise<number>;
   findConsoleSession(tokenDigest: Buffer, now: Date): Promise<ConsoleSessionRecord | undefined>;
   revokeConsoleSession(id: string, now: Date): Promise<void>;
-  createUser(record: DemoUserRecord): Promise<boolean>;
   findUserByEmail(email: string): Promise<DemoUserRecord | undefined>;
   findUserById(id: string): Promise<DemoUserRecord | undefined>;
   createUserSession(record: DemoUserSessionRecord, limit?: number): Promise<void>;
   findUserSession(tokenDigest: Buffer, now: Date): Promise<DemoUserSessionRecord | undefined>;
   revokeUserSession(id: string, now: Date): Promise<void>;
+  createPendingUser(user: DemoUserRecord, action: DemoUserEmailActionRecord, maxUsers: number): Promise<boolean>;
+  createUserEmailAction(action: DemoUserEmailActionRecord): Promise<boolean>;
+  verifyUserEmail(tokenDigest: Buffer, now: Date, session: Omit<DemoUserSessionRecord, "userId">, maxSessions: number): Promise<DemoUserRecord | undefined>;
+  resetUserPassword(tokenDigest: Buffer, passwordHash: string, now: Date): Promise<boolean>;
   createApiKey(record: ApiKeyRecord, limit?: number): Promise<void>;
   findApiKey(secretDigest: Buffer, now: Date): Promise<ApiKeyRecord | undefined>;
   listApiKeys(): Promise<readonly ApiKeyRecord[]>;
@@ -67,6 +81,5 @@ export type ShowcaseStore = Readonly<{
   findSession(apiKeyId: string, tokenDigest: Buffer, now: Date): Promise<ApplicationSessionRecord | undefined>;
   listSessions(apiKeyId?: string): Promise<readonly ApplicationSessionRecord[]>;
   revokeSession(id: string, apiKeyId: string | undefined, now: Date): Promise<boolean>;
-  createUserAndSession(user: DemoUserRecord, session: DemoUserSessionRecord, maxUsers: number, maxSessions: number): Promise<boolean>;
   listEventSummaries(): Promise<readonly EventSummary[]>;
 }>;

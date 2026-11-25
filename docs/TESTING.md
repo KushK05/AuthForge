@@ -4,7 +4,7 @@
 
 The active deployment root is `infra/classroom`. Its mocked test verifies one small EC2 instance, one private disposable RDS instance, restricted ingress, a force-destroy S3 bucket, one-day CloudWatch retention, and SES-only IAM. It creates no AWS resources. Run `npm run classroom:check`; after provider initialization, formatting, validation, and mocked tests run in networking-disabled Terraform containers.
 
-For an approved live demonstration, `npm run classroom:aws -- smoke` must prove hosted authentication, console access, keys, sessions, ownership, revocation, direct worker completion, an S3 artifact, SES simulator acceptance, and CloudWatch API/worker streams. `status` lists the five demonstrated resources and deadline. After `destroy`, independently verify the EC2 instance/EIP, RDS instance/snapshots, S3 bucket/objects, CloudWatch log group, and project IAM/VPC resources are absent.
+For an approved live demonstration, `npm run classroom:aws -- smoke` proves console access, API keys, sessions, ownership, revocation, direct worker completion, an S3 artifact, SES simulator acceptance, and CloudWatch API/worker streams. Complete hosted verification manually from the single configured test inbox; the remote CLI does not read mail. `status` lists the five demonstrated resources and deadline. After `destroy`, independently verify the EC2 instance/EIP, RDS instance/snapshots, S3 bucket/objects, CloudWatch log group, and project IAM/VPC resources are absent.
 
 ## Test layers
 
@@ -17,7 +17,7 @@ For an approved live demonstration, `npm run classroom:aws -- smoke` must prove 
 | Security | Prevent leaks and bypasses | log redaction, wrong-key access, CSRF, CORS, SQL input, request bounds, IAM assumptions |
 | Infrastructure | Prove AWS evaluation and deletion | Terraform validation, required resources, encryption, private data services, destroy plan |
 
-Local integration and end-to-end tests use disposable PostgreSQL, Redis, and LocalStack or equivalent service emulators. Remote smoke tests use the real temporary AWS environment, SES sandbox or mailbox simulator, and synthetic data only.
+Local integration and end-to-end tests use disposable PostgreSQL, Redis, and LocalStack or equivalent service emulators. Remote smoke tests use the real temporary AWS environment, the SES mailbox simulator for lifecycle events, the one configured verified test inbox for account links, and synthetic account labels only.
 
 ## Mandatory end-to-end journey
 
@@ -30,9 +30,10 @@ Local integration and end-to-end tests use disposable PostgreSQL, Redis, and Loc
 7. Attempt validation and revocation with a different API key and confirm the session is undiscoverable.
 8. Revoke a session through the console, then through the owning API-key path, and confirm both are idempotent and validation fails.
 9. Create another session, revoke its API key, and confirm the key and owned sessions fail immediately.
-10. Advance controlled time and confirm browser/application-session expiry and Redis cache invalidation behavior.
-11. Confirm the outbox event reaches SQS, duplicate delivery causes one worker effect, the S3 artifact is redacted, SES uses only sandbox/simulator mode, and CloudWatch receives the expected metric.
-12. Force a synthetic worker failure through its retry budget and confirm DLQ visibility without exposing secrets.
+10. Register a synthetic `@authforge.demo` account, verify it from the configured inbox, sign in, request a reset, confirm the one-time reset revokes its browser session, and sign in with the replacement password.
+11. Advance controlled time and confirm browser/application-session expiry and Redis cache invalidation behavior.
+12. Confirm the outbox event reaches SQS, duplicate delivery causes one worker effect, the S3 artifact is redacted, lifecycle SES uses only the simulator, and CloudWatch receives the expected metric.
+13. Force a synthetic worker failure through its retry budget and confirm DLQ visibility without exposing secrets.
 
 ## Security checks
 
@@ -74,9 +75,9 @@ npm run test:browser
 docker compose -p authforge-test -f compose.test.yaml down --volumes
 ```
 
-`npm test` skips integration suites unless `AUTHFORGE_LOCAL_INTEGRATION=true`. `npm run test:integration` explicitly opts into the disposable test ports (PostgreSQL 55432, Redis 56379, LocalStack 54566), applies the full migration chain, and verifies real transactions, capacity, rollback, cache hints, worker artifacts, simulator email, and DLQ delivery. Run it before browser tests to prepare the test database. Browser tests run the API on port 8081 and never record screenshots, videos, or traces containing credentials.
+`npm test` skips integration suites unless `AUTHFORGE_LOCAL_INTEGRATION=true`. `npm run test:integration` explicitly opts into the disposable test ports (PostgreSQL 55432, Redis 56379, LocalStack 54566 by default), applies the full migration chain. If a port is occupied, set `AUTHFORGE_TEST_POSTGRES_PORT`, `AUTHFORGE_TEST_REDIS_PORT`, and `AUTHFORGE_TEST_LOCALSTACK_PORT` for Compose, plus `AUTHFORGE_TEST_DATABASE_URL`, `AUTHFORGE_TEST_REDIS_URL`, and `AUTHFORGE_TEST_LOCALSTACK_URL` for test processes. Browser tests use the database and Redis URLs from those variables. Integration tests verify real transactions, capacity, rollback, cache hints, worker artifacts, simulator email, and DLQ delivery. Run it before browser tests to prepare the test database. Browser tests run the API on port 8081 and never record screenshots, videos, or traces containing credentials.
 
-The hosted-auth contracts verify Argon2id storage, domain and password bounds, generic login errors, duplicate registration, cookie flags, CSRF/Origin, one-hour expiry, throttling, atomic registration, and secret-free logs. Browser checks verify reload and sign-out plus console key/session lifecycle and dialog keyboard behavior.
+The hosted-auth contracts verify pending Argon2id registration, verified-only login, one-time verification and reset expiry, resend invalidation, generic responses, reset session revocation, cookie flags, CSRF/Origin, throttling, atomic writes, fixed-inbox delivery, and secret-free logs. The local `npm run demo:check` additionally reads only LocalStack’s captured messages to complete both real API email links end to end. Browser checks cover registration, verification-link handling, reset UI, reload/sign-out, and console key/session lifecycle. Local demo smoke extracts verification and reset links only from LocalStack SES capture; remote smoke cannot consume the test inbox and reports registration email acceptance without claiming a verified user journey.
 
 The cancellation regression creates an isolated test key, dismisses its revocation dialog through Cancel, Escape, and the backdrop, then visits every console section. It asserts that no key-revocation request was sent, the key metadata remains active, and the key still authenticates. It also checks that a dismissed dialog cannot execute a stale pending action.
 
