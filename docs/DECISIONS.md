@@ -121,6 +121,18 @@ ADR-011 defines the active classroom deployment scope. ADR-012 adds the approved
 - Migration and rollback: Add `email_verified_at` and `showcase_user_email_actions` through forward migration 0015. The classroom environment remains disposable; rollback destroys and recreates it.
 - Verification: Contract tests cover digest-backed single use, expiry, resend invalidation, generic responses, Argon2id reset, session revocation, fixed recipient, and log redaction. LocalStack/browser journeys cover the user flow; SES identity checks run before a future AWS plan.
 
+## ADR-013: Optional public HTTP ingress for the classroom demo
+
+- Status: accepted
+- Date: 2026-11-25
+- Relationship: Amends ADR-011 only where it restricts HTTP ingress to a classroom CIDR.
+- Context: The operator needs the demo reachable from networks whose public IP is not known in advance.
+- Decision: `allowed_cidr` accepts any IPv4 CIDR, including `0.0.0.0/0`, for EC2 HTTP port 8080 only. RDS stays private to the EC2 security group, S3 stays private, SES recipients stay fixed, and no other port or service is opened.
+- Alternatives: Keep a single `/32` and update it per network, which is safer but fails when the presenting network is unknown. Add HTTPS through ALB/ACM or CloudFront, which exceeds the five-service classroom set.
+- Consequences: Plain HTTP exposes the console access code, cookies, and demo passwords to network observers, and anyone can reach the sign-up and login pages. Existing rate limits apply, and account-action email still reaches only the one verified test inbox. Only synthetic data may be entered, and the stack must be destroyed right after the demo.
+- Migration and rollback: Set `allowed_cidr` back to a `/32` and re-apply, or destroy the stack.
+- Verification: Unit tests accept `0.0.0.0/0` and reject non-IPv4 values. The Terraform plan shows a single ingress rule on port 8080.
+
 ## ADR template
 
 ## ADR-NNN: Title

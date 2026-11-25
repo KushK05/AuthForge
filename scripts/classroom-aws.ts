@@ -19,7 +19,7 @@ export const validateClassroomVariables = (content: string, sha: string, now = n
   const recipient = content.match(/^auth_email_test_recipient\s*=\s*"([^"]+)"/m)?.[1];
   if (!recipient || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipient) || recipient.toLowerCase().endsWith("@authforge.demo")) throw new Error("Configure one real SES-verified auth_email_test_recipient inbox");
   if (/203\.0\.113\.10\/32|verified-demo@example\.com|test-inbox@example\.com|0123456789abcdef/.test(content)) throw new Error("Replace all classroom example values");
-  if (/allowed_cidr\s*=\s*"(?:0\.0\.0\.0\/0|::\/0)"/.test(content)) throw new Error("Public ingress is forbidden");
+  if (!/^allowed_cidr\s*=\s*"\d{1,3}(?:\.\d{1,3}){3}\/\d{1,2}"/m.test(content)) throw new Error("allowed_cidr must be an IPv4 CIDR");
   const deadline = content.match(/^teardown_at\s*=\s*"([^"]+)"/m)?.[1];
   const remaining = deadline ? new Date(deadline).getTime() - now.getTime() : Number.NaN;
   if (!Number.isFinite(remaining) || remaining <= 0 || remaining > 12 * 60 * 60 * 1000) throw new Error("teardown_at must be within the next 12 hours");

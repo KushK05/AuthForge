@@ -1,5 +1,5 @@
 aws_region = "ap-south-1"
-allowed_cidr = "203.0.113.10/32" # Replace with the classroom public IPv4/32.
+allowed_cidr = "203.0.113.10/32" # Replace with the classroom public IPv4/32, or 0.0.0.0/0 for a public demo (ADR-013).
 ses_from_email = "verified-demo@example.com" # Must already be verified in SES.
 ses_simulator_email = "success@simulator.amazonses.com"
 auth_email_test_recipient = "test-inbox@example.com" # Replace with one address verified in SES; registration/reset links go only here.

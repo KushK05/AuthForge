@@ -1,10 +1,10 @@
 variable "aws_region" { type = string }
 variable "allowed_cidr" {
   type        = string
-  description = "Teacher/demo public IPv4 CIDR, normally x.x.x.x/32."
+  description = "IPv4 CIDR allowed to reach HTTP port 8080: a classroom /32, or 0.0.0.0/0 for a public demo (ADR-013)."
   validation {
-    condition     = can(cidrhost(var.allowed_cidr, 0)) && !contains(["0.0.0.0/0", "::/0"], var.allowed_cidr)
-    error_message = "Use a restricted classroom CIDR, never the whole internet."
+    condition     = can(cidrhost(var.allowed_cidr, 0)) && can(regex("^[0-9.]+/[0-9]+$", var.allowed_cidr))
+    error_message = "Use an IPv4 CIDR such as x.x.x.x/32, or 0.0.0.0/0 for a public demo."
   }
 }
 variable "ses_from_email" { type = string }
