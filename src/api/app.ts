@@ -20,8 +20,7 @@ import { ConsoleService } from "../modules/developer-console/console-service.js"
 import { type IssuedSession, SessionService } from "../modules/sessions/session-service.js";
 import { UserService } from "../modules/users/user-service.js";
 import { SesAuthEmailSender, type AuthEmailSender } from "../modules/users/auth-email-service.js";
-import { authClient, authPage } from "./auth-page.js";
-import { dashboardClient, dashboardPage } from "./dashboard-page.js";
+import { registerPageRoutes } from "./ui/routes.js";
 import { type ConsoleRateLimiter, MemoryConsoleRateLimiter } from "../platform/redis.js";
 import type { ApiKeyRecord, ApplicationSessionRecord, ConsoleSessionRecord, ShowcaseStore } from "../platform/store.js";
 
@@ -133,18 +132,7 @@ export const buildApi = (
   };
 
   api.get("/health/live", async () => ({ status: "ok" }));
-  api.get("/", async (_request, reply) => {
-    reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
-    reply.header("Cache-Control", "no-store");
-    return reply.type("text/html; charset=utf-8").send(authPage);
-  });
-  api.get("/console", async (_request, reply) => { reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"); reply.header("Cache-Control", "no-store"); return reply.type("text/html; charset=utf-8").send(dashboardPage); });
-  api.get("/dashboard.js", async (_request, reply) => {
-    reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'");
-    reply.header("Cache-Control", "no-store");
-    return reply.type("application/javascript; charset=utf-8").send(dashboardClient);
-  });
-  api.get("/auth.js", async (_request, reply) => { reply.header("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"); reply.header("Cache-Control", "no-store"); return reply.type("application/javascript; charset=utf-8").send(`${authClient};document.head.insertAdjacentHTML('beforeend','<style>.layout>section:first-child:before{display:none}@media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr);gap:46px}}@media(max-width:520px){.layout{gap:34px}.layout>section:first-child{padding:32px 0 34px}.layout>section:first-child:before{display:none}h1{font-size:clamp(43px,13vw,54px)}.lead{margin:20px 0 28px}.proof{gap:15px}.card{padding:24px;box-shadow:10px 10px 0 #182c36}}</style>');`); });
+  registerPageRoutes(api);
   api.get("/health/ready", async (_request, reply) => {
     try {
       await store.ready();
