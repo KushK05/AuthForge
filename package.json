@@ -23,7 +23,10 @@
     "infra:check": "bash scripts/infra-check.sh",
     "aws:migrate": "tsx scripts/aws-migrate.ts",
     "classroom:aws": "tsx scripts/classroom-aws.ts",
-    "classroom:check": "bash scripts/classroom-infra-check.sh"
+    "classroom:check": "bash scripts/classroom-infra-check.sh",
+    "classroom:stop": "tsx scripts/classroom-aws.ts stop",
+    "classroom:start": "tsx scripts/classroom-aws.ts start",
+    "classroom:power": "tsx scripts/classroom-aws.ts power"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",
