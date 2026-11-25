@@ -18,7 +18,7 @@ describe("SES hosted-auth email delivery", () => {
       expect(message.Destination?.ToAddresses).toEqual(["learner@authforge.demo"]);
       expect(message.Source).toBe("sender@authforge.demo");
     }
-    expect(messages[0]?.Message?.Body?.Text?.Data).toContain("#action=verify-email");
-    expect(messages[1]?.Message?.Body?.Text?.Data).toContain("#action=reset-password");
+    expect(messages[0]?.Message?.Body?.Text?.Data).toContain("https://showcase.example.test/verify-email#token=verify_" + "a".repeat(43));
+    expect(messages[1]?.Message?.Body?.Text?.Data).toContain("https://showcase.example.test/reset-password#token=reset_" + "b".repeat(43));
   });
 });
