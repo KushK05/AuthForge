@@ -42,7 +42,7 @@ This is a small modular application, not a microservice system. The API and work
 
 | Module | Responsibility | Must not own |
 | --- | --- | --- |
-| `developer-console` | Static console UI, access-code exchange, CSRF, and console session | Developer accounts, organizations, teams, billing |
+| `developer-console` | Static console UI and shared console state, authorized by the demo-user browser session and CSRF | Developer accounts, organizations, teams, billing |
 | `api-keys` | Create, list, authenticate, and revoke demonstration API keys | Projects, environments, user permissions |
 | `users` | Register, verify, sign in, and reset passwords for approved demo labels with Argon2id hashes and short browser sessions; sends links to one configured test inbox | Public onboarding, arbitrary recipients, profiles, roles, refresh families |
 | `sessions` | Create, validate, list, expire, and revoke sessions for synthetic subjects or approved demo users | Roles, refresh families |
@@ -53,7 +53,7 @@ Modules communicate through application services and narrow repository interface
 
 ## State ownership
 
-PostgreSQL is authoritative while the temporary environment exists. It stores console sessions, approved demo users, one-time action-token digests and their browser sessions, API-key metadata and digests, application sessions, outbox events, and worker deduplication records.
+PostgreSQL is authoritative while the temporary environment exists. It stores approved demo users, one-time action-token digests and their browser sessions, API-key metadata and digests, application sessions, outbox events, and worker deduplication records.
 
 Redis is disposable. It stores console-login rate limits, short-lived credential validation cache, and revocation hints. A Redis loss may reduce performance or force conservative rejection, but it must not grant access or lose authoritative state.
 
@@ -70,7 +70,7 @@ S3 stores only redacted synthetic lifecycle-event artifacts used as evaluation e
 7. The worker consumes SQS events with completion deduplication, emits CloudWatch metrics, writes a redacted S3 artifact, and optionally calls SES using only a sandbox or simulator recipient.
 8. Exhausted event processing enters the DLQ and is visible during evaluation.
 
-Event payloads contain event ID, event type, timestamp, API-key ID, session ID when applicable, and correlation ID. They never contain raw keys, tokens, access codes, subjects, email addresses, or request bodies.
+Event payloads contain event ID, event type, timestamp, API-key ID, session ID when applicable, and correlation ID. They never contain raw keys, tokens, subjects, email addresses, or request bodies.
 
 ## Suggested code organization
 

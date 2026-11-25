@@ -7,21 +7,11 @@ import type {
   EventSummary,
   ApiKeyRecord,
   ApplicationSessionRecord,
-  ConsoleSessionRecord,
   DemoUserRecord,
   DemoUserEmailActionRecord,
   DemoUserSessionRecord,
   ShowcaseStore
 } from "./store.js";
-
-type ConsoleSessionRow = Readonly<{
-  id: string;
-  token_digest: Buffer;
-  csrf_digest: Buffer;
-  created_at: Date;
-  expires_at: Date;
-  revoked_at: Date | null;
-}>;
 
 type ApiKeyRow = Readonly<{
   id: string;
@@ -44,15 +34,6 @@ type SessionRow = Readonly<{
   expires_at: Date;
   revoked_at: Date | null;
 }>;
-
-const toConsoleSession = (row: ConsoleSessionRow): ConsoleSessionRecord => ({
-  id: row.id,
-  tokenDigest: row.token_digest,
-  csrfDigest: row.csrf_digest,
-  createdAt: row.created_at,
-  expiresAt: row.expires_at,
-  ...(row.revoked_at ? { revokedAt: row.revoked_at } : {})
-});
 
 const toApiKey = (row: ApiKeyRow): ApiKeyRecord => ({
   id: row.id,
@@ -80,45 +61,6 @@ export class PostgresShowcaseStore implements ShowcaseStore {
 
   public async ready(): Promise<void> {
     await this.sql`SELECT 1`;
-  }
-
-  public async createConsoleSession(record: ConsoleSessionRecord, limit = 20): Promise<void> {
-    await this.sql.begin(async transaction => {
-      await transaction`SELECT pg_advisory_xact_lock(824031421)`;
-      const [count] = await transaction<{count: number}[]>`SELECT count(*)::int AS count FROM showcase_console_sessions WHERE revoked_at IS NULL AND expires_at > now()`;
-      if ((count?.count ?? 0) >= limit) throw capacityExceeded();
-      await transaction`
-      INSERT INTO showcase_console_sessions
-        (id, token_digest, csrf_digest, created_at, expires_at)
-      VALUES
-        (${record.id}, ${record.tokenDigest}, ${record.csrfDigest}, ${record.createdAt}, ${record.expiresAt})
-      `;
-    });
-  }
-
-  public async countConsoleSessions(): Promise<number> {
-    const [row] = await this.sql<{ count: number }[]>`
-      SELECT count(*)::int AS count FROM showcase_console_sessions
-      WHERE revoked_at IS NULL AND expires_at > now()
-    `;
-    return row?.count ?? 0;
-  }
-
-  public async findConsoleSession(tokenDigest: Buffer, now: Date): Promise<ConsoleSessionRecord | undefined> {
-    const [row] = await this.sql<ConsoleSessionRow[]>`
-      SELECT id, token_digest, csrf_digest, created_at, expires_at, revoked_at
-      FROM showcase_console_sessions
-      WHERE token_digest = ${tokenDigest} AND revoked_at IS NULL AND expires_at > ${now}
-      LIMIT 1
-    `;
-    return row ? toConsoleSession(row) : undefined;
-  }
-
-  public async revokeConsoleSession(id: string, now: Date): Promise<void> {
-    await this.sql`
-      UPDATE showcase_console_sessions SET revoked_at = ${now}
-      WHERE id = ${id} AND revoked_at IS NULL
-    `;
   }
 
   public async findUserByEmail(email: string): Promise<DemoUserRecord | undefined> {

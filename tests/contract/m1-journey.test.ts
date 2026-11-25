@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import { buildApi } from "../../src/api/app.js";
 import type { AppConfig } from "../../src/platform/config.js";
 import { Logger } from "../../src/platform/logger.js";
+import { hashOpaqueSecret } from "../../src/shared/crypto/opaque-secret.js";
 import { MemoryShowcaseStore } from "../../src/platform/memory-store.js";
 import { MemoryConsoleRateLimiter } from "../../src/platform/redis.js";
+import { demoPassword } from "../support/demo-user.js";
+import { FakeAuthEmailSender } from "../support/fake-auth-email-sender.js";
 
 const config: AppConfig = {
   environment: "test",
@@ -14,7 +17,6 @@ const config: AppConfig = {
   databaseUrl: "postgres://authforge:authforge@localhost:5432/authforge",
   redisUrl: "redis://localhost:6379",
   awsRegion: "us-east-1",
-  consoleAccessCode: "top-secret-console-access-code-12345",
   credentialHashKey: "hash-key-at-least-32-random-characters-long",
   consoleOrigin: "http://127.0.0.1:8080",
   defaultSessionTtlSeconds: 900,
@@ -22,7 +24,8 @@ const config: AppConfig = {
   maxSubjectLength: 128,
   maxApiKeys: 10,
   maxSessions: 20,
-  maxConsoleSessions: 20,
+  authEmailFromEmail: "sender@authforge.demo",
+  authEmailTestRecipient: "learner@authforge.demo",
   secureCookies: true
 };
 
@@ -34,7 +37,8 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
     const logger = new Logger("info", config.environment, (line) => logLines.push(line));
     const store = new MemoryShowcaseStore();
     const rateLimiter = new MemoryConsoleRateLimiter(5, 60_000);
-    const app = buildApi(config, store, rateLimiter, logger);
+    const sender = new FakeAuthEmailSender();
+    const app = buildApi(config, store, rateLimiter, logger, undefined, sender);
 
     try {
       // Step 1: Health check
@@ -45,41 +49,51 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       const ready = await app.inject({ method: "GET", url: "/health/ready" });
       expect(ready.statusCode).toBe(200);
 
-      // Step 2: Throttling repeated invalid console access (5 failures -> 429)
-      const badCode = "wrong-access-code-123";
+      // Step 2: Throttling repeated failed sign-ins (5 failures -> 429)
+      const badPassword = "wrong-password-123456";
       for (let i = 0; i < 5; i++) {
         const fail = await app.inject({
           method: "POST",
-          url: "/v1/console/session",
-          payload: { access_code: badCode }
+          url: "/v1/auth/login",
+          headers: origin,
+          payload: { email: "learner@authforge.demo", password: badPassword }
         });
         expect(fail.statusCode).toBe(401);
-        expect(fail.json().error.code).toBe("invalid_console_access");
+        expect(fail.json().error.code).toBe("invalid_user_credentials");
       }
-
       const throttled = await app.inject({
         method: "POST",
-        url: "/v1/console/session",
-        payload: { access_code: badCode }
+        url: "/v1/auth/login",
+        headers: origin,
+        payload: { email: "learner@authforge.demo", password: badPassword }
       });
       expect(throttled.statusCode).toBe(429);
       expect(throttled.json().error.code).toBe("rate_limited");
 
-      // Reset limiter to allow legitimate unlock
-      await rateLimiter.reset("127.0.0.1");
+      // Reset limiter to allow a legitimate sign-in
+      await rateLimiter.reset(`auth:${hashOpaqueSecret("127.0.0.1", config.credentialHashKey).toString("hex")}`);
 
-      // Step 3: Unlock console and assert cookie flags, CSRF token, and Cache-Control: no-store
+      // Step 3: Register, verify, and assert cookie flags, CSRF token, and Cache-Control: no-store
+      const registered = await app.inject({
+        method: "POST",
+        url: "/v1/auth/register",
+        headers: origin,
+        payload: { email: "learner@authforge.demo", password: demoPassword }
+      });
+      expect(registered.statusCode).toBe(202);
       const login = await app.inject({
         method: "POST",
-        url: "/v1/console/session",
-        payload: { access_code: config.consoleAccessCode }
+        url: "/v1/auth/verify-email",
+        headers: origin,
+        payload: { token: sender.verificationTokens.at(-1) }
       });
       expect(login.statusCode).toBe(200);
       expect(login.headers["cache-control"]).toBe("no-store");
-      const cookieHeader = login.headers["set-cookie"] as string;
+      const cookieHeader = String(login.headers["set-cookie"]);
       expect(cookieHeader).toContain("HttpOnly");
       expect(cookieHeader).toContain("SameSite=Strict");
       expect(cookieHeader).toContain("Secure");
+      const cookie = cookieHeader.split(";")[0]!;
       const csrfToken = login.json().csrf_token as string;
       expect(csrfToken).toMatch(/^csrf_[A-Za-z0-9_-]+/);
 
@@ -87,7 +101,7 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       const initialState = await app.inject({
         method: "GET",
         url: "/v1/console/state",
-        headers: { ...origin, cookie: cookieHeader }
+        headers: { ...origin, cookie }
       });
       expect(initialState.statusCode).toBe(200);
       expect(initialState.json().api_keys).toEqual([]);
@@ -97,7 +111,7 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       const noCsrf = await app.inject({
         method: "POST",
         url: "/v1/api-keys",
-        headers: { ...origin, cookie: cookieHeader },
+        headers: { ...origin, cookie },
         payload: { name: "test-key" }
       });
       expect(noCsrf.statusCode).toBe(403);
@@ -106,7 +120,7 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       const badOrigin = await app.inject({
         method: "POST",
         url: "/v1/api-keys",
-        headers: { origin: "https://untrusted-site.com", cookie: cookieHeader, "x-csrf-token": csrfToken },
+        headers: { origin: "https://untrusted-site.com", cookie, "x-csrf-token": csrfToken },
         payload: { name: "test-key" }
       });
       expect(badOrigin.statusCode).toBe(403);
@@ -116,7 +130,7 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       const createKey = await app.inject({
         method: "POST",
         url: "/v1/api-keys",
-        headers: { ...origin, cookie: cookieHeader, "x-csrf-token": csrfToken },
+        headers: { ...origin, cookie, "x-csrf-token": csrfToken },
         payload: { name: "showcase-service" }
       });
       expect(createKey.statusCode).toBe(201);
@@ -133,7 +147,7 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       const listKeys = await app.inject({
         method: "GET",
         url: "/v1/api-keys",
-        headers: { ...origin, cookie: cookieHeader }
+        headers: { ...origin, cookie }
       });
       expect(listKeys.statusCode).toBe(200);
       const keysList = listKeys.json().data as Array<Record<string, unknown>>;
@@ -157,7 +171,7 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       const revokeKey = await app.inject({
         method: "DELETE",
         url: `/v1/api-keys/${keyData.id}`,
-        headers: { ...origin, cookie: cookieHeader, "x-csrf-token": csrfToken }
+        headers: { ...origin, cookie, "x-csrf-token": csrfToken }
       });
       expect(revokeKey.statusCode).toBe(204);
 
@@ -165,7 +179,7 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       const repeatRevoke = await app.inject({
         method: "DELETE",
         url: `/v1/api-keys/${keyData.id}`,
-        headers: { ...origin, cookie: cookieHeader, "x-csrf-token": csrfToken }
+        headers: { ...origin, cookie, "x-csrf-token": csrfToken }
       });
       expect(repeatRevoke.statusCode).toBe(204);
 
@@ -188,11 +202,11 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       });
       expect(sessionValidate.statusCode).toBe(401);
 
-      // Step 10: Revoke console session (logout)
+      // Step 10: Sign out of the browser session
       const logout = await app.inject({
         method: "DELETE",
-        url: "/v1/console/session",
-        headers: { ...origin, cookie: cookieHeader, "x-csrf-token": csrfToken }
+        url: "/v1/auth/session",
+        headers: { ...origin, cookie, "x-csrf-token": csrfToken }
       });
       expect(logout.statusCode).toBe(204);
       expect(logout.headers["set-cookie"]).toContain("Max-Age=0");
@@ -201,17 +215,18 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       const consoleAfter = await app.inject({
         method: "GET",
         url: "/v1/console/state",
-        headers: { ...origin, cookie: cookieHeader }
+        headers: { ...origin, cookie }
       });
       expect(consoleAfter.statusCode).toBe(401);
-      expect(consoleAfter.json().error.code).toBe("invalid_console_session");
+      expect(consoleAfter.json().error.code).toBe("invalid_user_credentials");
 
       // Step 11: Security check - assert ZERO credentials or secrets leaked into logs
       expect(logLines.length).toBeGreaterThan(0);
       const combinedLogs = logLines.join("\n");
 
-      expect(combinedLogs).not.toContain(badCode);
-      expect(combinedLogs).not.toContain(config.consoleAccessCode);
+      expect(combinedLogs).not.toContain(badPassword);
+      expect(combinedLogs).not.toContain(demoPassword);
+      expect(combinedLogs).not.toContain(cookie);
       expect(combinedLogs).not.toContain(rawSecret);
       expect(combinedLogs).not.toContain(csrfToken);
       expect(combinedLogs).not.toContain("demo-subject-1");
@@ -222,7 +237,7 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
         expect(parsed).not.toHaveProperty("authorization");
         expect(parsed).not.toHaveProperty("cookie");
         expect(parsed).not.toHaveProperty("secret");
-        expect(parsed).not.toHaveProperty("access_code");
+        expect(parsed).not.toHaveProperty("password");
       }
     } finally {
       await app.close();

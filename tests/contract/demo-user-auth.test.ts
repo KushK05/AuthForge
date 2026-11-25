@@ -7,7 +7,7 @@ import { MemoryConsoleRateLimiter } from "../../src/platform/redis.js";
 import { Logger } from "../../src/platform/logger.js";
 import { FakeAuthEmailSender } from "../support/fake-auth-email-sender.js";
 
-const config = loadConfig({NODE_ENV: "test", DATABASE_URL: "postgres://test:test@localhost/test", REDIS_URL: "redis://localhost", CONSOLE_ACCESS_CODE: "test-console-access-code", CREDENTIAL_HASH_KEY: "test-credential-hash-key-at-least-32", AUTH_EMAIL_FROM_EMAIL: "sender@authforge.demo", AUTH_EMAIL_TEST_RECIPIENT: "learner@authforge.demo", SECURE_COOKIES: "true"});
+const config = loadConfig({NODE_ENV: "test", DATABASE_URL: "postgres://test:test@localhost/test", REDIS_URL: "redis://localhost", CREDENTIAL_HASH_KEY: "test-credential-hash-key-at-least-32", AUTH_EMAIL_FROM_EMAIL: "sender@authforge.demo", AUTH_EMAIL_TEST_RECIPIENT: "learner@authforge.demo", SECURE_COOKIES: "true"});
 const origin = {origin: config.consoleOrigin};
 const identity = {email: "learner@authforge.demo", password: "a-demo-password-123"};
 const apps: ReturnType<typeof buildApi>[] = [];

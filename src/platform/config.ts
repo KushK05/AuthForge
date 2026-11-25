@@ -24,7 +24,6 @@ const configurationSchema = z.object({
   AUTH_EMAIL_FROM_EMAIL: optionalEmail,
   AUTH_EMAIL_TEST_RECIPIENT: optionalEmail,
   CLASSROOM_DIRECT_EVENTS: z.enum(["true", "false"]).default("false"),
-  CONSOLE_ACCESS_CODE: z.string().min(16),
   CREDENTIAL_HASH_KEY: z.string().min(32),
   CONSOLE_ORIGIN: z.string().url().default("http://127.0.0.1:8080"),
   DEFAULT_SESSION_TTL_SECONDS: z.coerce.number().int().min(30).max(86_400).default(900),
@@ -32,7 +31,6 @@ const configurationSchema = z.object({
   MAX_SUBJECT_LENGTH: z.coerce.number().int().min(1).max(256).default(128),
   MAX_API_KEYS: z.coerce.number().int().min(1).max(10_000).default(100),
   MAX_SESSIONS: z.coerce.number().int().min(1).max(100_000).default(1_000),
-  MAX_CONSOLE_SESSIONS: z.coerce.number().int().min(1).max(10_000).default(20),
   MAX_REQUEST_BODY_BYTES: z.coerce.number().int().min(1024).max(65536).default(16384),
   MAX_FAILED_CONSOLE_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),
   CONSOLE_ATTEMPT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3600).default(60),
@@ -60,7 +58,6 @@ export type AppConfig = Readonly<{
   showcaseSesSimulatorEmail?: string;
   authEmailFromEmail?: string;
   authEmailTestRecipient?: string;
-  consoleAccessCode: string;
   credentialHashKey: string;
   consoleOrigin: string;
   defaultSessionTtlSeconds: number;
@@ -68,7 +65,6 @@ export type AppConfig = Readonly<{
   maxSubjectLength: number;
   maxApiKeys: number;
   maxSessions: number;
-  maxConsoleSessions: number;
   maxRequestBodyBytes?: number;
   maxFailedConsoleAttempts?: number;
   consoleAttemptWindowSeconds?: number;
@@ -124,7 +120,6 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     ...(parsed.data.SHOWCASE_SES_SIMULATOR_EMAIL ? { showcaseSesSimulatorEmail: parsed.data.SHOWCASE_SES_SIMULATOR_EMAIL } : {}),
     ...(parsed.data.AUTH_EMAIL_FROM_EMAIL ? { authEmailFromEmail: parsed.data.AUTH_EMAIL_FROM_EMAIL } : {}),
     ...(parsed.data.AUTH_EMAIL_TEST_RECIPIENT ? { authEmailTestRecipient: parsed.data.AUTH_EMAIL_TEST_RECIPIENT } : {}),
-    consoleAccessCode: parsed.data.CONSOLE_ACCESS_CODE,
     credentialHashKey: parsed.data.CREDENTIAL_HASH_KEY,
     consoleOrigin: parsed.data.CONSOLE_ORIGIN,
     defaultSessionTtlSeconds: parsed.data.DEFAULT_SESSION_TTL_SECONDS,
@@ -132,7 +127,6 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     maxSubjectLength: parsed.data.MAX_SUBJECT_LENGTH,
     maxApiKeys: parsed.data.MAX_API_KEYS,
     maxSessions: parsed.data.MAX_SESSIONS,
-    maxConsoleSessions: parsed.data.MAX_CONSOLE_SESSIONS,
     maxRequestBodyBytes: parsed.data.MAX_REQUEST_BODY_BYTES,
     maxFailedConsoleAttempts: parsed.data.MAX_FAILED_CONSOLE_ATTEMPTS,
     consoleAttemptWindowSeconds: parsed.data.CONSOLE_ATTEMPT_WINDOW_SECONDS,

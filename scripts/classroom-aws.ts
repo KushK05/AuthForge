@@ -88,7 +88,7 @@ const deploy = (): void => {
 
 const smoke = (): void => {
   preflight(false);
-  show(process.execPath, ["--import", "tsx", "scripts/demo-smoke.ts"], {...process.env, AUTHFORGE_BASE_URL: output("showcase_url"), CONSOLE_ACCESS_CODE: output("console_access_code")});
+  show(process.execPath, ["--import", "tsx", "scripts/demo-smoke.ts"], {...process.env, AUTHFORGE_BASE_URL: output("showcase_url")});
 };
 
 const status = (): void => {

@@ -12,7 +12,6 @@ const testConfig: AppConfig = {
   databaseUrl: "postgres://authforge:authforge@localhost:5432/authforge",
   redisUrl: "redis://localhost:6379",
   awsRegion: "us-east-1",
-  consoleAccessCode: "showcase-test-access-code",
   credentialHashKey: "showcase-credential-hash-key-at-least-32-bytes",
   consoleOrigin: "http://127.0.0.1:8080",
   defaultSessionTtlSeconds: 900,
@@ -20,7 +19,6 @@ const testConfig: AppConfig = {
   maxSubjectLength: 128,
   maxApiKeys: 3,
   maxSessions: 20,
-  maxConsoleSessions: 20,
   secureCookies: false
 };
 

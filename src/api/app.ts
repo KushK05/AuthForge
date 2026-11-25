@@ -23,7 +23,7 @@ import { SesAuthEmailSender, type AuthEmailSender } from "../modules/users/auth-
 import { authClient, authPage } from "./auth-page.js";
 import { dashboardClient, dashboardPage } from "./dashboard-page.js";
 import { type ConsoleRateLimiter, MemoryConsoleRateLimiter } from "../platform/redis.js";
-import type { ApiKeyRecord, ApplicationSessionRecord, ConsoleSessionRecord, ShowcaseStore } from "../platform/store.js";
+import type { ApiKeyRecord, ApplicationSessionRecord, ShowcaseStore } from "../platform/store.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -31,7 +31,6 @@ declare module "fastify" {
   }
 }
 
-const cookieName = "authforge_console";
 const userCookieName = "authforge_user";
 
 const parseCookie = (header: string | undefined, name: string): string | undefined => {
@@ -72,7 +71,7 @@ export const buildApi = (
   // AWS has exactly two trusted hops: ALB and CloudFront. Never trust the
   // viewer-supplied prefix of X-Forwarded-For.
   const api = Fastify({ logger: false, bodyLimit: config.maxRequestBodyBytes ?? 16384, trustProxy: config.trustProxy ? (_address: string, hop: number) => hop < 2 : false });
-  const consoleService = new ConsoleService(config, store, rateLimiter);
+  const consoleService = new ConsoleService(store);
   const apiKeyService = new ApiKeyService(config, store);
   const sessionService = new SessionService(config, store);
   const userService = new UserService(config, store, authEmailSender);
@@ -121,11 +120,15 @@ export const buildApi = (
     });
   });
 
-  const requireConsole = async (request: FastifyRequest, mutation: boolean): Promise<ConsoleSessionRecord> => {
-    const token = parseCookie(request.headers.cookie, cookieName);
+  const requireConsole = async (request: FastifyRequest, mutation: boolean) => {
     const origin = getOrigin(request);
-    const csrf = typeof request.headers["x-csrf-token"] === "string" ? request.headers["x-csrf-token"] : undefined;
-    return consoleService.verifySession(token, origin, mutation, csrf);
+    if (mutation ? origin !== config.consoleOrigin : origin !== undefined && origin !== config.consoleOrigin) throw invalidCsrf();
+    const current = await userService.authenticate(parseCookie(request.headers.cookie, userCookieName));
+    if (mutation) {
+      const csrf = typeof request.headers["x-csrf-token"] === "string" ? request.headers["x-csrf-token"] : undefined;
+      userService.verifyCsrf(current.session, csrf);
+    }
+    return current;
   };
 
   const requireApiKey = async (request: FastifyRequest): Promise<ApiKeyRecord> => {
@@ -154,16 +157,6 @@ export const buildApi = (
       if (error instanceof ApplicationError) throw error;
       throw unavailableDependency();
     }
-  });
-
-  api.post("/v1/console/session", async (request, reply) => {
-    const body = z.object({ access_code: z.string().min(1).max(256) }).strict().safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid console access request");
-    const { token, csrfToken } = await consoleService.login(body.data.access_code, request.ip);
-    const secure = config.secureCookies ? "; Secure" : "";
-    reply.header("Set-Cookie", `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=900${secure}`);
-    reply.header("Cache-Control", "no-store");
-    return reply.send({ csrf_token: csrfToken });
   });
 
   const userCookie = (token: string, maxAge: number): string => `${userCookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.secureCookies ? "; Secure" : ""}`;
@@ -234,14 +227,6 @@ export const buildApi = (
     if (getOrigin(request) !== config.consoleOrigin) throw invalidCsrf();
     userService.verifyCsrf(current.session, csrf); await store.revokeUserSession(current.session.id, new Date());
     reply.header("Set-Cookie", userCookie("", 0)); return reply.status(204).send();
-  });
-
-  api.delete("/v1/console/session", async (request, reply) => {
-    const session = await requireConsole(request, true);
-    await consoleService.revokeSession(session.id);
-    const secure = config.secureCookies ? "; Secure" : "";
-    reply.header("Set-Cookie", `${cookieName}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
-    return reply.status(204).send();
   });
 
   api.get("/v1/console/state", async (request) => {

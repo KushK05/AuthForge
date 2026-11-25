@@ -2,21 +2,9 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { MemoryShowcaseStore } from "../../src/platform/memory-store.js";
-import type { ApiKeyRecord, ApplicationSessionRecord, ConsoleSessionRecord } from "../../src/platform/store.js";
+import type { ApiKeyRecord, ApplicationSessionRecord } from "../../src/platform/store.js";
 
-describe("ShowcaseStore (console sessions and API keys)", () => {
-  const sampleConsoleSession = (overrides?: Partial<ConsoleSessionRecord>): ConsoleSessionRecord => {
-    const now = new Date();
-    return {
-      id: randomUUID(),
-      tokenDigest: Buffer.from("token-digest-1"),
-      csrfDigest: Buffer.from("csrf-digest-1"),
-      createdAt: now,
-      expiresAt: new Date(now.getTime() + 900_000),
-      ...overrides
-    };
-  };
-
+describe("ShowcaseStore (API keys)", () => {
   const sampleApiKey = (overrides?: Partial<ApiKeyRecord>): ApiKeyRecord => {
     const now = new Date();
     return {
@@ -28,51 +16,6 @@ describe("ShowcaseStore (console sessions and API keys)", () => {
       ...overrides
     };
   };
-
-  describe("Console Sessions", () => {
-    it("creates and finds an active console session by token digest", async () => {
-      const store = new MemoryShowcaseStore();
-      const record = sampleConsoleSession();
-      await store.createConsoleSession(record);
-
-      const found = await store.findConsoleSession(record.tokenDigest, new Date());
-      expect(found).toBeDefined();
-      expect(found?.id).toBe(record.id);
-      expect(found?.csrfDigest).toEqual(record.csrfDigest);
-    });
-
-    it("does not find expired console sessions", async () => {
-      const store = new MemoryShowcaseStore();
-      const past = new Date(Date.now() - 10_000);
-      const record = sampleConsoleSession({
-        createdAt: new Date(past.getTime() - 900_000),
-        expiresAt: past
-      });
-      await store.createConsoleSession(record);
-
-      const found = await store.findConsoleSession(record.tokenDigest, new Date());
-      expect(found).toBeUndefined();
-    });
-
-    it("does not find revoked console sessions", async () => {
-      const store = new MemoryShowcaseStore();
-      const record = sampleConsoleSession();
-      await store.createConsoleSession(record);
-
-      await store.revokeConsoleSession(record.id, new Date());
-
-      const found = await store.findConsoleSession(record.tokenDigest, new Date());
-      expect(found).toBeUndefined();
-    });
-
-    it("counts active console sessions accurately", async () => {
-      const store = new MemoryShowcaseStore();
-      expect(await store.countConsoleSessions()).toBe(0);
-
-      await store.createConsoleSession(sampleConsoleSession());
-      expect(await store.countConsoleSessions()).toBe(1);
-    });
-  });
 
   describe("API Keys", () => {
     it("creates and finds an active API key by secret digest", async () => {

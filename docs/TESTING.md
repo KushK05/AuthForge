@@ -22,8 +22,8 @@ Local integration and end-to-end tests use disposable PostgreSQL, Redis, and Loc
 ## Mandatory end-to-end journey
 
 1. Start with empty temporary stores and confirm the console state is empty.
-2. Repeat invalid console access until the configured Redis-backed limit returns `429`, without secret-bearing logs.
-3. Unlock the console and assert cookie flags, the returned CSRF token, and `Cache-Control: no-store` on the login response.
+2. Repeat failed hosted sign-ins until the configured Redis-backed limit returns `429`, without secret-bearing logs. Confirm console routes without a browser session return `401 invalid_user_credentials` and `POST /v1/console/session` returns `404`.
+3. Register and verify a demo user, then assert cookie flags, the returned CSRF token, and `Cache-Control: no-store` on the verification response. An unverified user cannot sign in, so cannot reach the console.
 4. Reject a console mutation with a missing token, incorrect token, or untrusted Origin using `403 invalid_csrf`.
 5. Create an API key, assert its one-time secret response has `Cache-Control: no-store`, and confirm list responses show only metadata and prefix.
 6. Create a session for `demo-user-1`, assert its token response has `Cache-Control: no-store`, and validate it with the creating API key.
@@ -37,7 +37,7 @@ Local integration and end-to-end tests use disposable PostgreSQL, Redis, and Loc
 
 ## Security checks
 
-- Raw access codes, cookies, CSRF tokens, API keys, session tokens, digests, subjects, and authorization headers never appear in logs, events, artifacts, metrics, traces, or error responses.
+- Raw passwords, cookies, CSRF tokens, API keys, session tokens, digests, subjects, and authorization headers never appear in logs, events, artifacts, metrics, traces, or error responses.
 - Console cookie and CSRF behavior exactly matches `API_CONTRACTS.md`.
 - SQL is parameterized and request schemas bound body size, label length, TTL, key count, and session count.
 - Redis failure cannot grant access. Console login fails closed when its limiter is unavailable.

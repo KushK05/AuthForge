@@ -103,7 +103,7 @@ ADR-011 defines the active classroom deployment scope. ADR-012 adds the approved
 - Status: accepted
 - Date: 2026-10-23
 - Context: The showcase needs a realistic hosted registration and sign-in experience while remaining a temporary evaluation environment.
-- Decision: Accept only approved `@authforge.demo` addresses, hash passwords with Argon2id, and keep demo users and their browser sessions in RDS until Terraform teardown. The developer console remains separately protected by its deployment-scoped access code.
+- Decision: Accept only approved `@authforge.demo` addresses, hash passwords with Argon2id, and keep demo users and their browser sessions in RDS until Terraform teardown. The developer console was initially protected separately by its deployment-scoped access code; ADR-014 supersedes that.
 - Alternatives: Public registration and real-recipient email are rejected because they conflict with the evaluation-only data boundary. A static sign-in mock is rejected because the demo needs a real authentication journey.
 - Consequences: Evaluators can exercise a complete sign-up and sign-in flow without customer data, public onboarding, email delivery, or retention after teardown.
 - Migration and rollback: The forward-only schema is disposable. Rollback destroys and recreates the temporary stack.
@@ -129,9 +129,21 @@ ADR-011 defines the active classroom deployment scope. ADR-012 adds the approved
 - Context: The operator needs the demo reachable from networks whose public IP is not known in advance.
 - Decision: `allowed_cidr` accepts any IPv4 CIDR, including `0.0.0.0/0`, for EC2 HTTP port 8080 only. RDS stays private to the EC2 security group, S3 stays private, SES recipients stay fixed, and no other port or service is opened.
 - Alternatives: Keep a single `/32` and update it per network, which is safer but fails when the presenting network is unknown. Add HTTPS through ALB/ACM or CloudFront, which exceeds the five-service classroom set.
-- Consequences: Plain HTTP exposes the console access code, cookies, and demo passwords to network observers, and anyone can reach the sign-up and login pages. Existing rate limits apply, and account-action email still reaches only the one verified test inbox. Only synthetic data may be entered, and the stack must be destroyed right after the demo.
+- Consequences: Plain HTTP exposes cookies and demo passwords to network observers, and anyone can reach the sign-up and login pages. Existing rate limits apply, and account-action email still reaches only the one verified test inbox. Only synthetic data may be entered, and the stack must be destroyed right after the demo.
 - Migration and rollback: Set `allowed_cidr` back to a `/32` and re-apply, or destroy the stack.
 - Verification: Unit tests accept `0.0.0.0/0` and reject non-IPv4 values. The Terraform plan shows a single ingress rule on port 8080.
+
+## ADR-014: Demo-user sign-in replaces the console access code
+
+- Status: accepted
+- Date: 2026-11-25
+- Relationship: Supersedes the console access code described in ADR-010 and amends ADR-013.
+- Context: The operator requested removing the console access code now that hosted login exists.
+- Decision: Console routes are authorized by the verified demo-user browser session (`authforge_user`). There is one shared console: every signed-in verified user sees and manages the same API keys, sessions, and events, with no per-user ownership. The access code, its Terraform secret and output, `POST/DELETE /v1/console/session`, and the console cookie are removed. The unused console-session table stays because migrations are forward-only.
+- Alternatives: Keep the access code, which adds a second credential for no extra control. Per-user dashboards, rejected because they introduce developer accounts and an ownership migration.
+- Consequences: Anyone who can verify an account through the single test inbox can manage the shared console. Only the operator controls that inbox, so only the operator can activate accounts. The plain HTTP exposure accepted in ADR-013 still applies to cookies and passwords.
+- Migration and rollback: No schema change. A leftover `CONSOLE_ACCESS_CODE` in an old environment is ignored. Roll back by reverting the commit.
+- Verification: Contract tests cover 401 without a session, 403 for missing, wrong, or untrusted-origin CSRF, unverified users unable to sign in, key and session management by a verified user, 401 after sign-out, and 404 for the removed route.
 
 ## ADR template
 

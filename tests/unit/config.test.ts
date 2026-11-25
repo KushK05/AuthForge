@@ -6,7 +6,6 @@ const validEnvironment = {
   DATABASE_URL: "postgres://authforge:authforge@localhost:5432/authforge",
   REDIS_URL: "redis://localhost:6379",
   AWS_REGION: "us-east-1",
-  CONSOLE_ACCESS_CODE: "test-console-access-code",
   CREDENTIAL_HASH_KEY: "test-credential-hash-key-with-32b"
 };
 
@@ -27,9 +26,16 @@ describe("loadConfig", () => {
     expect(() => loadConfig({...validEnvironment, NODE_ENV: "production", SECURE_COOKIES: "true", CONSOLE_ORIGIN: "https://authforge.example.com", DATABASE_URL: "postgres://demo:demo@database.example.com/authforge?sslmode=verify-full", REDIS_URL: "rediss://redis.example.com:6379"})).toThrow("verified test recipient");
   });
 
+  it("ignores a leftover CONSOLE_ACCESS_CODE from an older environment", () => {
+    const config = loadConfig({...validEnvironment, CONSOLE_ACCESS_CODE: "old-access-code-from-env"});
+    expect(config).not.toHaveProperty("consoleAccessCode");
+    expect(JSON.stringify(config)).not.toContain("old-access-code-from-env");
+    expect(loadConfig(validEnvironment)).toEqual(config);
+  });
+
   it("rejects incomplete configuration without exposing values", () => {
     expect(() => loadConfig({ AWS_REGION: "us-east-1" })).toThrow(
-      "Invalid configuration: DATABASE_URL, REDIS_URL, CONSOLE_ACCESS_CODE, CREDENTIAL_HASH_KEY"
+      "Invalid configuration: DATABASE_URL, REDIS_URL, CREDENTIAL_HASH_KEY"
     );
   });
   it("rejects an excessive default TTL, insecure deployed cookies, and non-simulator mail", () => {
@@ -48,11 +54,11 @@ describe("loadConfig", () => {
   });
   it("loads migration and worker configuration without API credentials or Redis", () => {
     const isolated = {NODE_ENV: "test", DATABASE_URL: validEnvironment.DATABASE_URL,
-      CONSOLE_ACCESS_CODE: "ignored", CREDENTIAL_HASH_KEY: "ignored", REDIS_URL: "invalid"};
+      CREDENTIAL_HASH_KEY: "ignored", REDIS_URL: "invalid"};
     expect(loadMigrationConfig(isolated)).toEqual({environment: "test", logLevel: "info", databaseUrl: validEnvironment.DATABASE_URL});
     const worker = loadWorkerConfig(isolated);
     expect(worker).toMatchObject({environment: "test", databaseUrl: validEnvironment.DATABASE_URL, awsRegion: "us-east-1"});
-    for (const field of ["consoleAccessCode", "credentialHashKey", "redisUrl"]) expect(worker).not.toHaveProperty(field);
+    for (const field of ["credentialHashKey", "redisUrl"]) expect(worker).not.toHaveProperty(field);
     expect(() => loadConfig(isolated)).toThrow("configuration");
   });
   it("enforces migration TLS without requiring browser cookie settings", () => {
@@ -64,7 +70,7 @@ describe("loadConfig", () => {
       SHOWCASE_QUEUE_URL: "https://sqs.us-east-1.amazonaws.com/123456789012/demo",
       SHOWCASE_S3_BUCKET: "demo-artifacts", SHOWCASE_S3_KMS_KEY_ID: "demo-kms",
       SHOWCASE_SES_FROM_EMAIL: "showcase@mail.example.com", SHOWCASE_SES_SIMULATOR_EMAIL: "success@simulator.amazonses.com"};
-    expect(loadWorkerConfig(worker)).not.toHaveProperty("consoleAccessCode");
+    expect(loadWorkerConfig(worker)).not.toHaveProperty("credentialHashKey");
     expect(() => loadWorkerConfig({...worker, AWS_S3_ENDPOINT_URL: "http://localstack:4566"})).toThrow("emulator");
     expect(() => loadWorkerConfig({...worker, SHOWCASE_SES_SIMULATOR_EMAIL: "someone@example.com"})).toThrow("simulator");
     expect(() => loadWorkerConfig({...worker, DATABASE_URL: validEnvironment.DATABASE_URL})).toThrow("verify-full");

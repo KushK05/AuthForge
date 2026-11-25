@@ -1,12 +1,3 @@
-export type ConsoleSessionRecord = Readonly<{
-  id: string;
-  tokenDigest: Buffer;
-  csrfDigest: Buffer;
-  createdAt: Date;
-  expiresAt: Date;
-  revokedAt?: Date;
-}>;
-
 export type ApiKeyRecord = Readonly<{
   id: string;
   name: string;
@@ -59,10 +50,6 @@ export type EventSummary = Readonly<{ id: string; event_type: string; created_at
 
 export type ShowcaseStore = Readonly<{
   ready(): Promise<void>;
-  createConsoleSession(record: ConsoleSessionRecord, limit?: number): Promise<void>;
-  countConsoleSessions(): Promise<number>;
-  findConsoleSession(tokenDigest: Buffer, now: Date): Promise<ConsoleSessionRecord | undefined>;
-  revokeConsoleSession(id: string, now: Date): Promise<void>;
   findUserByEmail(email: string): Promise<DemoUserRecord | undefined>;
   findUserById(id: string): Promise<DemoUserRecord | undefined>;
   createUserSession(record: DemoUserSessionRecord, limit?: number): Promise<void>;
