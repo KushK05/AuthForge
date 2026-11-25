@@ -4,7 +4,7 @@
 
 The active deployment root is `infra/classroom`. Its mocked test verifies one small EC2 instance, one private disposable RDS instance, ingress limited to the configured CIDR on port 8080, a force-destroy S3 bucket, one-day CloudWatch retention, and SES-only IAM. It creates no AWS resources. Run `npm run classroom:check`; after provider initialization, formatting, validation, and mocked tests run in networking-disabled Terraform containers.
 
-For an approved live demonstration, `npm run classroom:aws -- smoke` proves console access, API keys, sessions, ownership, revocation, direct worker completion, an S3 artifact, SES simulator acceptance, and CloudWatch API/worker streams. Complete hosted verification manually from the single configured test inbox; the remote CLI does not read mail. `status` lists the five demonstrated resources and deadline. After `destroy`, independently verify the EC2 instance/EIP, RDS instance/snapshots, S3 bucket/objects, CloudWatch log group, and project IAM/VPC resources are absent.
+For an approved live demonstration, `npm run classroom:aws -- smoke` proves registration email acceptance and, with a verified operator account in `AUTHFORGE_SMOKE_EMAIL`/`AUTHFORGE_SMOKE_PASSWORD`, console access, API keys, sessions, ownership, revocation, direct worker completion, an S3 artifact, SES simulator acceptance, and CloudWatch API/worker streams. Complete hosted verification manually from the single configured test inbox; the remote CLI does not read mail. `status` lists the five demonstrated resources and deadline. After `destroy`, independently verify the EC2 instance/EIP, RDS instance/snapshots, S3 bucket/objects, CloudWatch log group, and project IAM/VPC resources are absent.
 
 ## Test layers
 

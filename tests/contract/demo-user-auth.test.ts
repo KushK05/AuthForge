@@ -148,4 +148,15 @@ describe("hosted demo authentication emails", () => {
       expect((await attempt("192.0.2.2")).statusCode).toBe(429);
     }
   });
+
+  it("does not count successful sign-ins against the limit, but still caps email-sending requests", async () => {
+    const {app, register, verify} = setup({}, new MemoryConsoleRateLimiter(2));
+    expect((await register()).statusCode).toBe(202);
+    expect((await verify()).statusCode).toBe(200);
+    const login = {method: "POST" as const, url: "/v1/auth/login", headers: origin, payload: identity};
+    for (let i = 0; i < 5; i++) expect((await app.inject(login)).statusCode).toBe(200);
+    const reset = {method: "POST" as const, url: "/v1/auth/password-reset", headers: origin, payload: {email: identity.email}};
+    expect((await app.inject(reset)).statusCode).toBe(202);
+    expect((await app.inject(reset)).statusCode).toBe(429);
+  });
 });

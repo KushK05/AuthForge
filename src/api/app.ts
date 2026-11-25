@@ -148,12 +148,27 @@ export const buildApi = (
   });
 
   const userCookie = (token: string, maxAge: number): string => `${userCookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.secureCookies ? "; Secure" : ""}`;
-  const throttleUserAuth = async (request: FastifyRequest): Promise<string> => {
+  // Email-sending routes count every request so the test inbox cannot be flooded.
+  // Credential routes (sign-in, verify, reset confirm) count only failed attempts,
+  // so successful sign-ins from a shared classroom network never lock it out.
+  const authBucket = (request: FastifyRequest, kind: "mail" | "credential"): string => {
     if (getOrigin(request) !== config.consoleOrigin) throw invalidCsrf();
-    const bucket = `auth:${digest(request.ip, config).toString("hex")}`;
+    return `auth-${kind}:${digest(request.ip, config).toString("hex")}`;
+  };
+  const throttleUserAuth = async (request: FastifyRequest): Promise<void> => {
+    const bucket = authBucket(request, "mail");
     await rateLimiter.assertAllowed(bucket);
     await rateLimiter.recordFailure(bucket);
-    return bucket;
+  };
+  const credentialAttempt = async <T>(request: FastifyRequest, attempt: () => Promise<T>): Promise<T> => {
+    const bucket = authBucket(request, "credential");
+    await rateLimiter.assertAllowed(bucket);
+    try {
+      return await attempt();
+    } catch (error) {
+      await rateLimiter.recordFailure(bucket);
+      throw error;
+    }
   };
   api.post("/v1/auth/register", async (request, reply) => {
     await throttleUserAuth(request);
@@ -172,19 +187,21 @@ export const buildApi = (
     return reply.status(202).send({message: "If the account needs verification, a message has been sent to the configured demo inbox."});
   });
   api.post("/v1/auth/verify-email", async (request, reply) => {
-    await throttleUserAuth(request);
-    const body = z.object({token: z.string().min(1).max(128)}).strict().safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid email verification request");
-    const issued = await userService.verifyEmail(body.data.token);
+    const issued = await credentialAttempt(request, async () => {
+      const body = z.object({token: z.string().min(1).max(128)}).strict().safeParse(request.body);
+      if (!body.success) throw invalidRequest("Invalid email verification request");
+      return userService.verifyEmail(body.data.token);
+    });
     reply.header("Set-Cookie", userCookie(issued.token, 3600));
     reply.header("Cache-Control", "no-store");
     return reply.send({user: {id: issued.user.id, email: issued.user.email}, csrf_token: issued.csrfToken});
   });
   api.post("/v1/auth/login", async (request, reply) => {
-    await throttleUserAuth(request);
-    const body = z.object({ email: z.string().max(254), password: z.string().max(256) }).strict().safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid sign-in request");
-    const issued = await userService.login(body.data.email, body.data.password);
+    const issued = await credentialAttempt(request, async () => {
+      const body = z.object({ email: z.string().max(254), password: z.string().max(256) }).strict().safeParse(request.body);
+      if (!body.success) throw invalidRequest("Invalid sign-in request");
+      return userService.login(body.data.email, body.data.password);
+    });
     reply.header("Set-Cookie", userCookie(issued.token, 3600)); reply.header("Cache-Control", "no-store");
     return reply.send({ user: { id: issued.user.id, email: issued.user.email }, csrf_token: issued.csrfToken });
   });
@@ -197,10 +214,11 @@ export const buildApi = (
     return reply.status(202).send({message: "If the account is eligible, a password reset email has been sent to the configured demo inbox."});
   });
   api.post("/v1/auth/password-reset/confirm", async (request, reply) => {
-    await throttleUserAuth(request);
-    const body = z.object({token: z.string().min(1).max(128), password: z.string().min(12).max(256)}).strict().safeParse(request.body);
-    if (!body.success) throw invalidRequest("Invalid password reset confirmation");
-    await userService.resetPassword(body.data.token, body.data.password);
+    await credentialAttempt(request, async () => {
+      const body = z.object({token: z.string().min(1).max(128), password: z.string().min(12).max(256)}).strict().safeParse(request.body);
+      if (!body.success) throw invalidRequest("Invalid password reset confirmation");
+      await userService.resetPassword(body.data.token, body.data.password);
+    });
     return reply.status(204).send();
   });
   api.get("/v1/auth/me", async (request) => {

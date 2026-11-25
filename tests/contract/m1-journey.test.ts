@@ -71,7 +71,7 @@ describe("M1 Mandatory End-to-End Journey and Security Gate", () => {
       expect(throttled.json().error.code).toBe("rate_limited");
 
       // Reset limiter to allow a legitimate sign-in
-      await rateLimiter.reset(`auth:${hashOpaqueSecret("127.0.0.1", config.credentialHashKey).toString("hex")}`);
+      for (const kind of ["credential", "mail"]) await rateLimiter.reset(`auth-${kind}:${hashOpaqueSecret("127.0.0.1", config.credentialHashKey).toString("hex")}`);
 
       // Step 3: Register, verify, and assert cookie flags, CSRF token, and Cache-Control: no-store
       const registered = await app.inject({
